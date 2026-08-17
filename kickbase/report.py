@@ -24,17 +24,22 @@ def _name(player: dict) -> str:
     return name or "?"
 
 
-def _delta_label(delta: int | None) -> str:
-    """Formats a market-value change for display, or explains why there
-    isn't one yet."""
-    if delta is None:
-        return "Δmv: no trend data yet (first time seen)"
-    sign = "+" if delta >= 0 else ""
-    return f"Δmv {sign}{delta:,.0f} since last check"
+def _trend_label(player: dict) -> str:
+    """Formats a player's real 24h/7d market-value change (see
+    predict.history_deltas, attached by cli.py's _enrich_with_history
+    before this is ever called), or explains why one isn't available."""
+    d1, d7 = player.get("d1"), player.get("d7")
+    if d1 is None and d7 is None:
+        return "no value history available for this player yet"
+    parts = []
+    if d1 is not None:
+        parts.append(f"24h {'+' if d1 >= 0 else ''}{d1:,.0f}")
+    if d7 is not None:
+        parts.append(f"7d {'+' if d7 >= 0 else ''}{d7:,.0f}")
+    return ", ".join(parts)
 
 
 def build_briefing(
-    league_id: str,
     league_name: str,
     squad: list[dict],
     budget: float,
@@ -44,10 +49,9 @@ def build_briefing(
     lines = [
         f"*{league_name}*",
         f"Budget: {budget:,.0f}  |  Squad: {len(squad)}/{max_squad_size}",
-        "ℹ️ Score = momentum ranking (value trend × points production, higher = stronger signal). "
-        "Δmv = observed market value change since the last time this ran - builds up over the "
-        "first few days as history accumulates, and only moves when Kickbase updates values "
-        "(roughly once daily).",
+        "ℹ️ Score = momentum ranking (7-day value trend × points production, higher = stronger "
+        "signal). 24h/7d = actual observed market value change over that window, from Kickbase's "
+        "own history.",
         "",
     ]
 
@@ -74,12 +78,9 @@ def build_briefing(
     if instant_sells or list_sells:
         lines.append("📉 Sell advice:")
         for p in instant_sells:
-            # Squad items carry sdmvt (the API's own recent-delta figure) directly.
-            delta = _delta_label(p.get("sdmvt"))
-            lines.append(f"  • {_name(p)} — instant-sell to Kickbase, ~{p.get('mv', 0):,.0f} (0 pts, {delta})")
+            lines.append(f"  • {_name(p)} — instant-sell to Kickbase, ~{p.get('mv', 0):,.0f} (0 pts, {_trend_label(p)})")
         for p in list_sells:
-            delta = _delta_label(p.get("sdmvt"))
-            lines.append(f"  • {_name(p)} — list on market at ~{p.get('mv', 0):,.0f} ({delta})")
+            lines.append(f"  • {_name(p)} — list on market at ~{p.get('mv', 0):,.0f} ({_trend_label(p)})")
     else:
         lines.append("📉 Sell advice: nothing worth selling right now.")
     lines.append("")
@@ -89,10 +90,7 @@ def build_briefing(
         lines.append("📈 Buy advice (affordable, within squad room):")
         for p in buys:
             score = predict.momentum_score(p)
-            # Market listings never carry sdmvt (see momentum_score) - this
-            # is our own history-based substitute instead.
-            delta = _delta_label(predict.observed_delta(league_id, p.get("i"), p.get("mv")))
-            lines.append(f"  • {_name(p)} — bid {p.get('prc', 0):,.0f} (score {score:.0f}, {delta})")
+            lines.append(f"  • {_name(p)} — bid {p.get('prc', 0):,.0f} (score {score:.0f}, {_trend_label(p)})")
     else:
         lines.append("📈 Buy advice: nothing affordable stands out right now.")
     lines.append("")
@@ -106,6 +104,6 @@ def build_briefing(
     if rising:
         lines.append("🔥 Also rising, but out of budget/squad room right now:")
         for p in rising:
-            lines.append(f"  • {_name(p)} — {p.get('prc', 0):,.0f} ({p.get('ap', 0)} avg pts)")
+            lines.append(f"  • {_name(p)} — {p.get('prc', 0):,.0f} ({p.get('ap', 0)} avg pts, {_trend_label(p)})")
 
     return "\n".join(lines)

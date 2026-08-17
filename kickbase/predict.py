@@ -1,21 +1,22 @@
-"""Market-value momentum scoring, and the snapshot collector that builds
-the dataset a real trained model (v1) would eventually need.
+"""Market-value momentum scoring, plus a snapshot collector for the
+broader-feature history (points, status, etc.) a future trained model
+would need beyond what Kickbase's own history endpoint gives.
 
-v0 here is deliberately NOT a trained model: Kickbase doesn't expose
-historical value time series through any endpoint we've found, and before
-this file existed we had no snapshots of our own either. Training
-something today and calling it machine learning would just be fitting
-noise (or worse, dressing up a hardcoded answer as "learned"). So:
+Correction from an earlier version of this file: Kickbase *does* expose
+real daily market-value history per player - `GET
+/v4/leagues/{leagueId}/players/{playerId}/marketValue/{timeframe}` (see
+client.get_market_value_history) - which is what the app's own 24h/7d
+charts are built from. An earlier pass here claimed no such endpoint
+existed and built a workaround (comparing our own sporadic snapshots)
+instead; that was a research miss, not a real API limitation. The
+workaround is gone - history_deltas() below uses the real endpoint.
 
-- momentum_score() is a transparent, hand-weighted combination of what a
-  single live snapshot actually gives us: the recent value delta (sdmvt)
-  and points production (ap). This is what strategy.py ranks buy/sell
-  candidates by today.
-- record_snapshot() / load_history() persist every squad+market snapshot
-  the bot sees to a local SQLite database. Once enough days of real
-  (features -> next-day actual value change) pairs exist, that data is
-  what an actual regression model would train on to replace
-  momentum_score(). Nothing here claims that day has arrived yet.
+What's still not a trained model, and why: the real endpoint gives market
+value over time, but not the *other* features (points, status, minutes)
+aligned to those same days - and Kickbase doesn't expose that combined
+history at all. record_snapshot()/load_history() are what build that
+dataset ourselves, one run at a time, for whenever there's enough of it to
+train something real on.
 """
 from __future__ import annotations
 
@@ -26,20 +27,36 @@ from pathlib import Path
 HISTORY_DB_PATH = Path.home() / ".cache" / "kickbase" / "history.db"
 
 
+def history_deltas(history: dict) -> dict[str, float | None]:
+    """Given a get_market_value_history() response, returns the actual
+    observed {"d1": 1-day change, "d7": 7-day change} in market value -
+    None for either if there isn't enough history yet (e.g. a player who
+    only just appeared).
+    """
+    entries = history.get("it") or []
+    if len(entries) < 2:
+        return {"d1": None, "d7": None}
+    latest = entries[-1].get("mv")
+    d1 = latest - entries[-2]["mv"] if len(entries) >= 2 else None
+    d7 = latest - entries[-8]["mv"] if len(entries) >= 8 else None
+    return {"d1": d1, "d7": d7}
+
+
 def momentum_score(player: dict) -> float:
     """Recent market value delta, scaled up for players also producing
     points - a rise backed by real performance is more likely to continue
     than one that isn't. Used to rank buy candidates: higher = stronger
     buy signal.
 
-    `sdmvt` is only present on squad items, never on market listings (
-    confirmed against live data - every market item has the key entirely
-    absent, not just zero) - so buy candidates, which come from the
-    market, always fall back to points production alone as the ranking
-    signal. Squad items (used for sell ranking) do carry it.
+    Prefers the real 7-day delta (`d7`, from history_deltas()) when the
+    caller has attached one; falls back to `sdmvt` (only present on squad
+    items, never on market listings) and finally to points alone if
+    neither delta is available.
     """
     points = player.get("ap", 0) or 0
-    delta = player.get("sdmvt")
+    delta = player.get("d7")
+    if delta is None:
+        delta = player.get("sdmvt")
     if delta is None:
         return points
     return delta * (1 + points / 100)
@@ -51,12 +68,12 @@ def decline_urgency(player: dict) -> float:
     temporary dip than one with nothing behind it. Used to rank sell
     candidates: more negative = more urgent to sell.
 
-    Falls back to a small points-scaled negative value if sdmvt is
-    missing, so the same "protect productive players" logic still holds
-    even without a real delta to work from.
+    Same `d7` -> `sdmvt` -> points-only fallback order as momentum_score().
     """
     points = player.get("ap", 0) or 0
-    delta = player.get("sdmvt")
+    delta = player.get("d7")
+    if delta is None:
+        delta = player.get("sdmvt")
     if delta is None:
         return -1 / (1 + points / 100)
     return delta / (1 + points / 100)
@@ -127,25 +144,3 @@ def load_history(league_id: str, player_id: str, db_path: Path = HISTORY_DB_PATH
     conn.close()
     cols = ["captured_at", "day", "mv", "mvt", "sdmvt", "tfhmvt", "ap", "p"]
     return [dict(zip(cols, row)) for row in rows]
-
-
-def observed_delta(
-    league_id: str, player_id: str, current_mv: int | None, db_path: Path = HISTORY_DB_PATH
-) -> int | None:
-    """Market value change since the most recent snapshot we recorded for
-    this player - our own substitute for sdmvt on market listings, which
-    the live API never provides (see momentum_score). None if we haven't
-    seen this player before or current_mv is unknown.
-
-    Caller must query this *before* calling record_snapshot() for the
-    current run, or "most recent" would just be the run in progress.
-    """
-    if current_mv is None:
-        return None
-    history = load_history(league_id, player_id, db_path)
-    if not history:
-        return None
-    previous_mv = history[-1].get("mv")
-    if previous_mv is None:
-        return None
-    return current_mv - previous_mv

@@ -203,6 +203,24 @@ def _max_squad_size(client: KickbaseClient, league_id: str) -> int:
     return 9999
 
 
+def _enrich_with_history(client: KickbaseClient, league_id: str, players: list[dict]) -> None:
+    """Mutates each player dict in place, attaching real d1/d7 market-value
+    deltas (see predict.history_deltas) from Kickbase's own history
+    endpoint, so momentum_score()/decline_urgency() rank on actual
+    observed trend instead of a fallback. One extra request per player -
+    fine at brief/bot's run frequency, not something to do in a tight loop.
+    """
+    for player in players:
+        player_id = player.get("i")
+        if not player_id:
+            continue
+        try:
+            history = client.get_market_value_history(league_id, player_id)
+        except KickbaseError:
+            continue
+        player.update(predict.history_deltas(history))
+
+
 def cmd_bot(args: argparse.Namespace) -> None:
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
@@ -213,6 +231,8 @@ def cmd_bot(args: argparse.Namespace) -> None:
     budget = client.get_budget(league_id).get("b", 0)
     market = client.get_market(league_id).get("it", [])
     max_squad_size = _max_squad_size(client, league_id)
+    _enrich_with_history(client, league_id, squad)
+    _enrich_with_history(client, league_id, market)
 
     # Log this run's features so a real model can eventually be trained on
     # them (see predict.py) - append-only, safe on every run.
@@ -308,11 +328,10 @@ def cmd_brief(args: argparse.Namespace) -> None:
         budget = client.get_budget(league_id).get("b", 0)
         market = client.get_market(league_id).get("it", [])
         max_squad_size = _max_squad_size(client, league_id)
-        # Must build the report before recording this run's snapshot, or
-        # observed_delta()'s "most recent prior snapshot" would just be
-        # the one from this run.
+        _enrich_with_history(client, league_id, squad)
+        _enrich_with_history(client, league_id, market)
         sections.append(
-            report.build_briefing(league_id, league.get("name", league_id), squad, budget, market, max_squad_size)
+            report.build_briefing(league.get("name", league_id), squad, budget, market, max_squad_size)
         )
         predict.record_snapshot(league_id, squad + market)
 

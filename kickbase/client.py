@@ -112,6 +112,16 @@ class KickbaseClient:
     def get_player(self, league_id: str, player_id: str) -> dict:
         return self._get(f"/v4/leagues/{league_id}/players/{player_id}")
 
+    def get_market_value_history(self, league_id: str, player_id: str, timeframe: int = 92) -> dict:
+        """Daily market value time series for a player - what the app's
+        24h/7d value charts are actually built from. timeframe is 92
+        (~3 months) or 365 (1 year); those are the only two values the
+        API currently accepts. Response: {"it": [{"dt": day_index, "mv":
+        value}, ...] (oldest first), "lmv"/"hmv": low/high in the window,
+        "trp": total rise points, "idp": in a drop phase}.
+        """
+        return self._get(f"/v4/leagues/{league_id}/players/{player_id}/marketValue/{timeframe}")
+
     def get_squad(self, league_id: str) -> dict:
         """Owned players: {"it": [...]}, each with mv/mvt (value + trend), ap, pos, st."""
         return self._get(f"/v4/leagues/{league_id}/squad")

@@ -129,34 +129,44 @@ rather than contested blind.
 ## Prediction
 
 `kickbase/predict.py` is the ranking signal behind buy/sell ordering, and
-it's honest about what it currently is: **not a trained model.** Kickbase
-doesn't expose historical market-value time series through any endpoint we
-found, and this project had zero snapshots of its own before this file
-existed — training something on no data would just be fitting noise.
+it's honest about what it currently is: **not a trained model** - a
+transparent, hand-weighted combination of real signals, not something
+fitted to historical (features → outcome) examples.
+
+**Correction:** an earlier version of this section claimed Kickbase
+exposes no historical market-value time series and built a workaround
+(comparing our own sporadic snapshots) instead. That was wrong - `GET
+/v4/leagues/{leagueId}/players/{playerId}/marketValue/{timeframe}`
+(`client.get_market_value_history()`) returns real daily value history
+for up to a year, for any player, owned or not. That's what the app's own
+24h/7d charts are built from, and what this now uses instead of the
+workaround.
 
 What's there today:
-- `momentum_score()` — ranks buy candidates. Squad items carry `sdmvt`
-  (recent value delta); market listings never do (confirmed against live
-  data — the key is entirely absent, not zero), so it falls back to
-  average points (`ap`) alone, rewarding a rising player who's also
-  actually producing over one who isn't.
+- `history_deltas()` — turns a `get_market_value_history()` response into
+  actual observed `{"d1": 24h change, "d7": 7-day change}`.
+  `cli._enrich_with_history()` fetches this for every squad/market player
+  before ranking (one extra request per player - adds a few seconds to
+  `bot`/`brief`, not something to do more often than a few times a day).
+- `momentum_score()` — ranks buy candidates: real 7-day delta (`d7`) when
+  available, scaled up for players also producing points (`ap`) - a rise
+  backed by real performance is more likely to continue than one that
+  isn't. Falls back to `sdmvt` (present on squad items only, never market
+  listings) and finally points alone if no delta is available at all (a
+  player too new to have value history yet).
 - `decline_urgency()` — ranks sell candidates the opposite way: a falling
   player still producing points is treated as *less* urgent to sell than
   the same decline with nothing behind it, since it reads more like a
-  temporary dip.
-- `observed_delta()` — the briefing's substitute for `sdmvt` on market
-  listings (buy candidates), since the live API never provides it there:
-  compares a player's current value against the most recent snapshot
-  *we've* recorded for them. Shown in `brief`'s output as `Δmv`. Needs at
-  least two snapshots spanning an actual Kickbase value update (roughly
-  once daily) before it shows anything but `+0` or "no trend data yet."
+  temporary dip. Same `d7` → `sdmvt` → points-only fallback order.
 - `record_snapshot()` — logs every squad + market player's features
   (`mv`, `mvt`, `sdmvt`, `tfhmvt`, `ap`, `p`, day) to a local SQLite
-  database (`~/.cache/kickbase/history.db`) on every bot/brief run. This is
-  the actual foundation: once enough days of real (features → next-day actual
-  value change) pairs accumulate, that data is what a genuine regression
-  model would train on to replace the hand-weighted formulas above.
-  `load_history()` reads it back per-player for whenever that's ready.
+  database (`~/.cache/kickbase/history.db`) on every bot/brief run. Kept
+  for a different purpose than the market-value history above: Kickbase's
+  own history endpoint gives value over time, but not the *other* features
+  (points, status) aligned to those same days. This is what building that
+  combined dataset ourselves, one run at a time, would look like - for
+  whenever a real regression model is worth training on it.
+  `load_history()` reads it back per-player.
 
 None of this is claimed to be an "optimal" strategy — it's a small set of
 explicit, readable rules in `strategy.py`/`predict.py` (pure functions, no network calls)
@@ -207,7 +217,15 @@ prints the real JSON for your league if you want to double check.
 | Login | `POST /v4/user/login` |
 | Transfer market listing | `GET /v4/leagues/{leagueId}/market` |
 | Player detail | `GET /v4/leagues/{leagueId}/players/{playerId}` |
+| Player market value history (24h/7d/etc.) | `GET /v4/leagues/{leagueId}/players/{playerId}/marketValue/{timeframe}` |
+| Owned squad | `GET /v4/leagues/{leagueId}/squad` |
+| Budget | `GET /v4/leagues/{leagueId}/me/budget` |
+| Get/set lineup | `GET`/`POST /v4/leagues/{leagueId}/lineup` |
+| List a player for sale | `POST /v4/leagues/{leagueId}/market` |
+| Instant-sell to Kickbase | `POST /v4/leagues/{leagueId}/market/{playerId}/sell` |
+| Place a bid | `POST /v4/leagues/{leagueId}/market/{playerId}/offers` |
 
-Placing/accepting/declining offers (`POST/DELETE /v4/leagues/{leagueId}/market/{playerId}/offers...`)
-is documented upstream but intentionally not wired up here — this tool only
-reads the market, it doesn't act on it.
+Accepting/declining *manager* offers (`POST/DELETE
+/v4/leagues/{leagueId}/market/{playerId}/offers/{offerId}/accept|decline`)
+is documented upstream but not wired up — nothing here currently needs to
+respond to an incoming offer on your own listings.
