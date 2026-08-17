@@ -56,11 +56,24 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 
 The upstream API doc doesn't pin down the exact field names inside a market
 listing (`GET /v4/leagues/{leagueId}/market`'s `it` array) — the example
-response it ships was captured with an empty market. `market --raw` prints
-the real JSON for your league so you can confirm the field names Kickbase
-actually uses. `kickbase/cli.py` tries a handful of likely candidates
-(`BID_COUNT_KEYS`, `PRICE_KEYS`, etc.) and falls back to `?` if none match —
-if that happens, check `--raw` output and add the real key to that list.
+response it ships was captured with an empty market. Verified against a
+live response, each item looks like:
+
+```json
+{
+  "i": "2804", "fn": "Jamal", "n": "Musiala", "tid": "2",
+  "pos": 3, "mv": 35254956, "prc": 35254956,
+  "ofc": 0, "exs": 35624, "dt": "2026-08-17T10:08:00Z"
+}
+```
+
+`ofc` is the bid/offer count, `exs` is seconds until the listing expires,
+`prc`/`mv` are asking price and market value, and `n` (not `ln`) is the last
+name. There's no team-name field (`tn`) in this payload, only the numeric
+`tid` — `kickbase/cli.py` falls back to showing that. `market --raw` prints
+the real JSON for your league if you want to double check or extend this
+(`BID_COUNT_KEYS` etc. in `cli.py` still list several fallback candidates
+in case the shape varies for other accounts).
 
 ## Endpoints used
 

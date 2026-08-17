@@ -18,17 +18,18 @@ from .client import KickbaseClient, KickbaseError
 
 STATE_DIR = Path.home() / ".cache" / "kickbase"
 
-# Candidate keys for fields the upstream doc doesn't pin down exactly
-# (the captured market example was empty). We try each in order and use
-# the first one present on a given item.
+# Confirmed against a live /v4/leagues/{leagueId}/market response (the
+# upstream doc's own example was captured with an empty market, so these
+# were originally guesses). Fallbacks are kept in case Kickbase varies
+# the payload shape across accounts/leagues.
 NAME_FIRST_KEYS = ("fn",)
-NAME_LAST_KEYS = ("ln",)
-NAME_FALLBACK_KEYS = ("n", "name")
-TEAM_KEYS = ("tn",)
+NAME_LAST_KEYS = ("n", "ln")
+NAME_FALLBACK_KEYS = ("name",)
+TEAM_KEYS = ("tn", "tid")  # tn (team name) isn't present in the market payload; tid (team id) is
 PRICE_KEYS = ("prc", "price")
 MARKET_VALUE_KEYS = ("mv",)
 EXPIRY_KEYS = ("exs", "exd", "expiry", "dt")
-BID_COUNT_KEYS = ("no", "noo", "ofc", "ofn", "numOffers", "offerCount", "bids", "nob")
+BID_COUNT_KEYS = ("ofc", "no", "noo", "ofn", "numOffers", "offerCount", "bids", "nob")
 ITEM_ID_KEYS = ("i", "id", "pi")
 
 
