@@ -24,8 +24,20 @@ def _name(player: dict) -> str:
     return name or "?"
 
 
+def _compact(n: float) -> str:
+    """Formats a currency-scale number compactly: 5,638,638 -> "5.6m",
+    520,628 -> "521k", 850 -> "850"."""
+    sign = "-" if n < 0 else ""
+    n = abs(n)
+    if n >= 1_000_000:
+        return f"{sign}{n / 1_000_000:.1f}m"
+    if n >= 1_000:
+        return f"{sign}{round(n / 1_000)}k"
+    return f"{sign}{n:.0f}"
+
+
 def _signed(n: float) -> str:
-    return f"{'+' if n >= 0 else ''}{n:,.0f}"
+    return f"{'+' if n >= 0 else ''}{_compact(n)}"
 
 
 def _trend_label(player: dict) -> str:
@@ -73,7 +85,7 @@ def build_briefing(
 ) -> str:
     lines = [
         f"*{league_name}*",
-        f"Budget: {budget:,.0f}  |  Squad: {len(squad)}/{max_squad_size}",
+        f"Budget: {_compact(budget)}  |  Squad: {len(squad)}/{max_squad_size}",
         "ℹ️ Score = relative ranking 0-100 within each list below (not a currency amount or a "
         "prediction) from 7-day trend × points production. 24h/7d = actual observed market value "
         "change, from Kickbase's own history. next-day est. = naive extrapolation of the 7d trend, "
@@ -106,12 +118,12 @@ def build_briefing(
         sell_scores = _normalized_scores(instant_sells + list_sells, predict.decline_urgency)
         for p in instant_sells:
             lines.append(
-                f"  • {_name(p)} — instant-sell to Kickbase, ~{p.get('mv', 0):,.0f} "
+                f"  • {_name(p)} — instant-sell to Kickbase, ~{_compact(p.get('mv', 0))} "
                 f"(urgency {sell_scores.get(p['i'], 0)}, 0 pts, {_trend_label(p)})"
             )
         for p in list_sells:
             lines.append(
-                f"  • {_name(p)} — list on market at ~{p.get('mv', 0):,.0f} "
+                f"  • {_name(p)} — list on market at ~{_compact(p.get('mv', 0))} "
                 f"(urgency {sell_scores.get(p['i'], 0)}, {_trend_label(p)})"
             )
     else:
@@ -124,7 +136,7 @@ def build_briefing(
         buy_scores = _normalized_scores(buys, predict.momentum_score)
         for p in buys:
             lines.append(
-                f"  • {_name(p)} — bid {p.get('prc', 0):,.0f} (score {buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
+                f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} (score {buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
             )
     else:
         lines.append("📈 Buy advice: nothing affordable stands out right now.")
@@ -141,7 +153,7 @@ def build_briefing(
         watch_scores = _normalized_scores(rising, predict.momentum_score)
         for p in rising:
             lines.append(
-                f"  • {_name(p)} — {p.get('prc', 0):,.0f} "
+                f"  • {_name(p)} — {_compact(p.get('prc', 0))} "
                 f"(score {watch_scores.get(p['i'], 0)}, {p.get('ap', 0)} avg pts, {_trend_label(p)})"
             )
 
