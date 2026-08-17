@@ -158,6 +158,18 @@ What's there today:
   player still producing points is treated as *less* urgent to sell than
   the same decline with nothing behind it, since it reads more like a
   temporary dip. Same `d7` → `sdmvt` → points-only fallback order.
+- `naive_projection()` — the closest thing here to an actual forward
+  number: the 7-day trend's average daily rate, continued one more day.
+  Not a forecast, just linear trend continuation — will be wrong whenever
+  a trend reverses, which market values do often (e.g. after a bad
+  matchday). Shown in `brief` as "next-day est."
+- `report._normalized_scores()` — `momentum_score()`/`decline_urgency()`
+  produce raw numbers on whatever scale their inputs happen to be on
+  (recently: multi-million currency-scale, easy to mistake for an actual
+  value prediction). This min-max normalizes to 0-100 *within each list
+  shown* (buy candidates, sell candidates, watchlist), for display only —
+  the underlying ranking is unchanged, this just relabels it clearly as
+  "relative strength," not an amount.
 - `record_snapshot()` — logs every squad + market player's features
   (`mv`, `mvt`, `sdmvt`, `tfhmvt`, `ap`, `p`, day) to a local SQLite
   database (`~/.cache/kickbase/history.db`) on every bot/brief run. Kept

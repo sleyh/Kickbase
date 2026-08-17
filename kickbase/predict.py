@@ -42,6 +42,20 @@ def history_deltas(history: dict) -> dict[str, float | None]:
     return {"d1": d1, "d7": d7}
 
 
+def naive_projection(player: dict) -> float | None:
+    """The closest thing here to an actual forward-looking number: the
+    7-day trend's average daily rate, continued one more day. This is
+    NOT a trained forecast - it's linear trend continuation, the simplest
+    possible assumption, and will be wrong whenever a trend reverses
+    (which market values do, often, especially after a good/bad
+    matchday). None if there's no d7 to extrapolate from.
+    """
+    d7 = player.get("d7")
+    if d7 is None:
+        return None
+    return d7 / 7
+
+
 def momentum_score(player: dict) -> float:
     """Recent market value delta, scaled up for players also producing
     points - a rise backed by real performance is more likely to continue
