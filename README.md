@@ -47,10 +47,13 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 - **cron**: `*/5 * * * * cd /path/to/repo && .venv/bin/python -m kickbase.cli watch --once >> market.log 2>&1`
 - **systemd timer**: run `watch --once` as a `oneshot` service triggered by a `.timer` unit.
 - **GitHub Actions**: `.github/workflows/transfer-market.yml` runs `watch --once`
-  every 15 minutes (and on manual `workflow_dispatch`). Add `KICKBASE_EMAIL`,
-  `KICKBASE_PASSWORD`, and optionally `KICKBASE_LEAGUE_ID` as repository
-  secrets for it to work. It caches `~/.cache/kickbase` between runs so the
-  watcher can diff against the previous run's snapshot.
+  every 15 minutes, and `.github/workflows/bot.yml` runs `bot` (live, not
+  `--dry-run`) every hour — both also support manual `workflow_dispatch`.
+  Add `KICKBASE_EMAIL`, `KICKBASE_PASSWORD`, and optionally
+  `KICKBASE_LEAGUE_ID` as repository secrets for either to work. Both cache
+  `~/.cache/kickbase` between runs (the watcher needs it to diff against the
+  previous snapshot; the bot doesn't strictly need it but it saves a login
+  round-trip each hour).
 
 `watch` persists the last-seen market snapshot to
 `~/.cache/kickbase/market_<leagueId>.json` and on each poll reports:
