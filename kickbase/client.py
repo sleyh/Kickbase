@@ -134,3 +134,13 @@ class KickbaseClient:
     def place_bid(self, league_id: str, player_id: str, price: int) -> Any:
         """Places an offer on a market listing (see cli.py for why this is a sealed bid)."""
         return self._post(f"/v4/leagues/{league_id}/market/{player_id}/offers", {"price": price})
+
+    def sell_to_kickbase(self, league_id: str, player_id: str) -> Any:
+        """Instantly sells an owned player to Kickbase itself, no waiting on a manager bid.
+
+        Despite the doc describing a two-step POST-then-DELETE-to-accept
+        flow, live testing showed a single POST completes the sale
+        immediately (player removed from squad, budget credited on the
+        spot) - no separate accept call needed.
+        """
+        return self._post(f"/v4/leagues/{league_id}/market/{player_id}/sell")

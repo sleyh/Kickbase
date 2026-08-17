@@ -220,8 +220,13 @@ def cmd_bot(args: argparse.Namespace) -> None:
     else:
         formation, starter_ids, bench = lineup_result
 
-    sells = strategy.sell_candidates(bench, MIN_SQUAD_SIZE, len(squad))
-    buys = strategy.buy_candidates(market, budget, len(squad), max_squad_size)
+    instant_sells, list_sells = strategy.sell_candidates(bench, MIN_SQUAD_SIZE, len(squad))
+    # Instant sells free a squad slot immediately (confirmed live: squad
+    # size drops and budget is credited the moment the sale completes), so
+    # buy room accounts for them. Market listings don't free a slot until
+    # someone else actually buys, so those aren't subtracted here.
+    projected_squad_size = len(squad) - len(instant_sells)
+    buys = strategy.buy_candidates(market, budget, projected_squad_size, max_squad_size)
 
     print(f"=== Bot plan for league {league_id} ===")
     print(f"Budget: {budget:,.0f}")
@@ -234,8 +239,12 @@ def cmd_bot(args: argparse.Namespace) -> None:
             player = by_id[pid]
             print(f"  {_player_name(player)} (pos {player.get('pos')}, {player.get('ap', 0)} avg pts)")
     print()
-    print(f"Sell ({len(sells)}):")
-    for player in sells:
+    print(f"Instant-sell to Kickbase ({len(instant_sells)}):")
+    for player in instant_sells:
+        print(f"  {_player_name(player)} for ~{player.get('mv')} (falling trend, 0 avg pts)")
+    print()
+    print(f"List on market ({len(list_sells)}):")
+    for player in list_sells:
         print(f"  {_player_name(player)} at {player.get('mv')} (falling trend)")
     print()
     print(f"Bid ({len(buys)}):")
@@ -244,9 +253,9 @@ def cmd_bot(args: argparse.Namespace) -> None:
         price = item.get("prc") or 0
         spend += price
         print(f"  {_player_name(item)} at {price} (rising trend)")
-    if not buys and len(squad) >= max_squad_size:
-        print(f"  (squad at max size {max_squad_size} - listing a player for sale doesn't free a slot")
-        print(f"   until someone actually buys it, so no bids are queued this cycle)")
+    if not buys and projected_squad_size >= max_squad_size:
+        print(f"  (squad at max size {max_squad_size} even after instant sells - listing a player for")
+        print(f"   sale doesn't free a slot until someone buys it, so no bids are queued this cycle)")
     print(f"Total planned spend: {spend:,.0f} of {budget:,.0f} available")
 
     if args.dry_run:
@@ -257,7 +266,10 @@ def cmd_bot(args: argparse.Namespace) -> None:
     if formation:
         client.set_lineup(league_id, formation, starter_ids)
         print(f"Lineup set to {formation}.")
-    for player in sells:
+    for player in instant_sells:
+        client.sell_to_kickbase(league_id, player["i"])
+        print(f"Instant-sold {_player_name(player)} to Kickbase.")
+    for player in list_sells:
         client.list_for_sale(league_id, player["i"], int(player.get("mv", 0)))
         print(f"Listed {_player_name(player)} for {player.get('mv')}.")
     for item in buys:

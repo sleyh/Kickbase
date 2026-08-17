@@ -76,11 +76,21 @@ Players with a non-zero status (`st`) — injured, suspended, etc. — are
 excluded from selection entirely.
 
 **Sell.** Bench players (not in the chosen lineup) with a falling market
-value trend (`mvt == 2`) get listed at their current market value, worst
-trend first, capped so the squad never drops below 11 players (you can't
-field a lineup with fewer). Listing a player doesn't remove them from your
-squad immediately — it just puts them on the market; the slot only frees up
-once someone actually buys them.
+value trend (`mvt == 2`), worst trend first, capped so the squad never
+drops below 11 players (you can't field a lineup with fewer). Split into
+two tiers:
+- **Instant-sell to Kickbase** (`DELETE`-free single `POST
+  /v4/leagues/{leagueId}/market/{playerId}/sell` call — despite the doc
+  describing a two-step offer/accept flow, live testing showed one POST
+  completes the sale immediately: player removed from squad, budget
+  credited on the spot) for players with 0 average points — dead weight
+  nobody's likely to bid on anyway, so take the guaranteed sale now rather
+  than waiting.
+- **List on the market** (`POST /v4/leagues/{leagueId}/market`) for
+  players still scoring points — a real bid might beat Kickbase's price,
+  so these wait. Listing doesn't remove them from your squad immediately;
+  the slot only frees up once someone actually buys them, unlike an
+  instant sell.
 
 **Bid.** Market listings with a rising trend (`mvt == 1`) that fit in
 remaining budget and squad space, strongest trend first, get a bid at the

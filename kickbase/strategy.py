@@ -63,16 +63,31 @@ def best_lineup(squad: list[dict]) -> tuple[str, list[str], list[dict]] | None:
     return (best[0], best[1], best[2]) if best else None
 
 
-def sell_candidates(bench: list[dict], min_squad_size: int, squad_size: int) -> list[dict]:
+def sell_candidates(
+    bench: list[dict], min_squad_size: int, squad_size: int
+) -> tuple[list[dict], list[dict]]:
     """Bench players with a falling market value trend, worst-trending first.
 
     Caps the count so the squad never drops below min_squad_size - selling
     more than that would leave too few players to field a legal lineup.
+
+    Splits the result into two tiers:
+    - instant_sell: falling trend AND zero average points - dead weight
+      nobody's likely to bid on anyway, so sell straight to Kickbase for a
+      guaranteed, immediate sale instead of waiting.
+    - list_for_market: falling trend but still scoring points - list for
+      other managers instead, since a real bid might beat Kickbase's price.
+
+    Returns (instant_sell, list_for_market).
     """
     room = max(0, squad_size - min_squad_size)
     candidates = [p for p in bench if p.get("mvt") == FALLING]
     candidates.sort(key=lambda p: p.get("sdmvt", 0))  # most negative trend first
-    return candidates[:room]
+    capped = candidates[:room]
+
+    instant_sell = [p for p in capped if not _points(p)]
+    list_for_market = [p for p in capped if _points(p)]
+    return instant_sell, list_for_market
 
 
 def buy_candidates(
