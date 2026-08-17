@@ -285,20 +285,21 @@ def cmd_bot(args: argparse.Namespace) -> None:
 
 
 def cmd_brief(args: argparse.Namespace) -> None:
-    """Read-only summary + advice, no execution. Covers all leagues on the
-    account unless --league-id narrows it to one, since this is meant as a
-    single periodic digest (eventually pushed to one Telegram channel)
-    rather than a per-league action.
+    """Read-only summary + advice, no execution. Scoped to one league by
+    default (--league-id / KICKBASE_LEAGUE_ID, same as market/bot) since
+    this is meant to become a single periodic digest for one league, not
+    every league on the account. --all-leagues opts back into covering
+    everything.
     """
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
     client.login()
 
-    leagues = client.leagues
-    if args.league_id:
-        leagues = [l for l in leagues if l.get("id") == args.league_id]
-        if not leagues:
-            sys.exit(f"League {args.league_id} not found on this account.")
+    if args.all_leagues:
+        leagues = client.leagues
+    else:
+        league_id = _resolve_league_id(client, args)
+        leagues = [l for l in client.leagues if l.get("id") == league_id]
 
     sections = []
     for league in leagues:
@@ -341,7 +342,10 @@ def build_parser() -> argparse.ArgumentParser:
     bot_parser.set_defaults(func=cmd_bot)
 
     brief_parser = subparsers.add_parser(
-        "brief", help="Read-only summary + advice for all leagues, no execution"
+        "brief", help="Read-only summary + advice for one league, no execution"
+    )
+    brief_parser.add_argument(
+        "--all-leagues", action="store_true", help="Cover every league on the account instead of just one"
     )
     brief_parser.set_defaults(func=cmd_brief)
 

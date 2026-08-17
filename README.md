@@ -74,11 +74,13 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 ## The briefing
 
 `brief` (`kickbase/report.py`) is the current default way to use this:
-read-only, no write endpoint ever called. It loops over every league on the
-account (or one, with `--league-id`), reuses the exact same decision logic
-the bot would act on (`strategy.py`/`predict.py`), and prints it as advice
-instead of executing it — lineup recommendation, sell/buy candidates with
-the reasoning behind each, and a "rising but out of budget/room" watchlist.
+read-only, no write endpoint ever called. Scoped to one league by default
+(`--league-id` / `KICKBASE_LEAGUE_ID`, same as `market`/`bot`; pass
+`--all-leagues` to cover every league on the account instead), it reuses
+the exact same decision logic the bot would act on (`strategy.py`/`predict.py`)
+and prints it as advice instead of executing it — lineup recommendation,
+sell/buy candidates with the reasoning behind each, and a "rising but out
+of budget/room" watchlist.
 
 Intended to run six times a day (6am, 10am, 2pm, 6pm, 8pm, midnight) and
 eventually push straight to a Telegram channel instead of stdout — not
