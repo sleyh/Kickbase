@@ -220,25 +220,74 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
 
     Returns {"photo_url": str|None, "caption": str, "text": str, "keyboard": dict}.
     """
+    e = html.escape
+
     featured = (data.buys or data.list_sells or data.instant_sells or [None])[0]
     photo_url = _player_photo_url(featured) if featured else None
     if featured:
         kind = "📈 Top buy signal" if featured in data.buys else "📉 Top sell signal"
         score = data.buy_scores.get(featured["i"]) if featured in data.buys else data.sell_scores.get(featured["i"])
-        caption = (
-            f"<b>{kind}: {html.escape(_name(featured))}</b>\n"
-            f"{html.escape(_trend_label(featured))}\n"
-            f"Score {score}"
-        )
+        caption = f"<b>{kind}: {e(_name(featured))}</b>\n{e(_trend_label(featured))}\nScore {score}"
     else:
-        caption = f"<b>{html.escape(league_name)}</b>\nNo standout buy or sell signal right now."
+        caption = f"<b>{e(league_name)}</b>\nNo standout buy or sell signal right now."
 
-    text_lines = [f"<b>{html.escape(league_name)}</b>"]
-    plain = render_text(league_name, data)
-    # Reuse render_text's body (skip its own bold header line) and HTML-escape it.
-    body = "\n".join(plain.split("\n")[1:])
-    text_lines.append(html.escape(body))
-    text = "\n".join(text_lines)
+    lines = [
+        f"<b>{e(league_name)}</b>",
+        f"💰 {e(_compact(data.budget))}   👥 {data.squad_size}/{data.max_squad_size}",
+        "",
+    ]
+
+    if data.formation is None:
+        if data.shortfall:
+            def _label(pos: int, n: int) -> str:
+                name = strategy.POSITION_NAMES[pos]
+                return f"{n} more fit {name if n != 1 else name[:-1]}"
+            gaps = ", ".join(_label(pos, n) for pos, n in data.shortfall.items())
+            lines.append(f"⚠️ <b>Can't fill a lineup</b> — need {e(gaps)}")
+        else:
+            lines.append("⚠️ <b>Not enough fit players</b> for a legal lineup right now.")
+    else:
+        lines.append(f"🔄 <b>Lineup: {e(data.formation)}</b>")
+        lines.append(e(", ".join(_name(p) for p in data.starters)))
+    lines.append("")
+
+    def _entry(p: dict, headline: str) -> str:
+        return f"• <b>{e(_name(p))}</b> — {headline}\n   {e(_trend_label(p))}"
+
+    if data.instant_sells or data.list_sells:
+        lines.append("📉 <b>Sell advice</b>")
+        for p in data.instant_sells:
+            urgency = data.sell_scores.get(p["i"], 0)
+            lines.append(_entry(p, f"instant-sell ~{_compact(p.get('mv', 0))} (urgency {urgency}, 0 pts)"))
+        for p in data.list_sells:
+            urgency = data.sell_scores.get(p["i"], 0)
+            lines.append(_entry(p, f"list at ~{_compact(p.get('mv', 0))} (urgency {urgency})"))
+    else:
+        lines.append("📉 <b>Sell advice</b> — nothing worth selling right now.")
+    lines.append("")
+
+    if data.buys:
+        lines.append("📈 <b>Buy advice</b>")
+        for p in data.buys:
+            score = data.buy_scores.get(p["i"], 0)
+            lines.append(_entry(p, f"bid {_compact(p.get('prc', 0))} (score {score})"))
+    else:
+        lines.append("📈 <b>Buy advice</b> — nothing affordable stands out right now.")
+    lines.append("")
+
+    if data.watchlist:
+        lines.append("🔥 <b>Also rising</b> (out of budget/room)")
+        for p in data.watchlist:
+            score = data.watch_scores.get(p["i"], 0)
+            lines.append(_entry(p, f"{_compact(p.get('prc', 0))} (score {score}, {p.get('ap', 0)} pts)"))
+        lines.append("")
+
+    lines.append(
+        "<i>Score = 0-100 relative ranking (7d trend × points), not a currency amount. "
+        "24h/7d = real observed value change. next-day est. = naive trend extrapolation, "
+        "not a forecast.</i>"
+    )
+    text = "\n".join(lines)
 
     button_players = (data.buys + data.list_sells + data.instant_sells)[:KEYBOARD_LIMIT]
     keyboard_rows = [[(f"🔍 {_name(p)}", _transfermarkt_url(p))] for p in button_players]
