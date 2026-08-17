@@ -87,6 +87,17 @@ class KickbaseClient:
             raise KickbaseError(f"GET {path} failed ({resp.status_code}): {resp.text}")
         return resp.json()
 
+    def _post(self, path: str, body: dict | None = None) -> Any:
+        headers = {**self._headers(), "Content-Type": "application/json"}
+        resp = self.session.post(f"{self.base_url}{path}", headers=headers, json=body or {}, timeout=15)
+        if resp.status_code == 401:
+            self.login(use_cache=False)
+            headers = {**self._headers(), "Content-Type": "application/json"}
+            resp = self.session.post(f"{self.base_url}{path}", headers=headers, json=body or {}, timeout=15)
+        if not resp.ok:
+            raise KickbaseError(f"POST {path} failed ({resp.status_code}): {resp.text}")
+        return resp.json() if resp.text else None
+
     def get_market(self, league_id: str) -> dict:
         """Returns the transfer market overview for a league.
 
@@ -100,3 +111,26 @@ class KickbaseClient:
 
     def get_player(self, league_id: str, player_id: str) -> dict:
         return self._get(f"/v4/leagues/{league_id}/players/{player_id}")
+
+    def get_squad(self, league_id: str) -> dict:
+        """Owned players: {"it": [...]}, each with mv/mvt (value + trend), ap, pos, st."""
+        return self._get(f"/v4/leagues/{league_id}/squad")
+
+    def get_budget(self, league_id: str) -> dict:
+        """{"b": available budget, "pbas": ..., "bs": ...}."""
+        return self._get(f"/v4/leagues/{league_id}/me/budget")
+
+    def get_lineup(self, league_id: str) -> dict:
+        return self._get(f"/v4/leagues/{league_id}/lineup")
+
+    def set_lineup(self, league_id: str, formation: str, player_ids: list[str]) -> Any:
+        """formation like "4-4-2" (DEF-MID-FWD; goalkeeper is implicit)."""
+        return self._post(f"/v4/leagues/{league_id}/lineup", {"type": formation, "players": player_ids})
+
+    def list_for_sale(self, league_id: str, player_id: str, price: int) -> Any:
+        """Lists an owned player on the transfer market at the given price."""
+        return self._post(f"/v4/leagues/{league_id}/market", {"pi": player_id, "prc": price})
+
+    def place_bid(self, league_id: str, player_id: str, price: int) -> Any:
+        """Places an offer on a market listing (see cli.py for why this is a sealed bid)."""
+        return self._post(f"/v4/leagues/{league_id}/market/{player_id}/offers", {"price": price})

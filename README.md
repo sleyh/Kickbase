@@ -1,9 +1,10 @@
-# Kickbase transfer market watcher
+# Kickbase bot
 
-Small CLI that logs into the [Kickbase v4 API](https://github.com/kevinskyba/kickbase-api-doc)
-and reports what's currently on your league's transfer market, so it can be
-run on a schedule (cron, systemd timer, GitHub Actions) instead of checking
-the app by hand.
+CLI that logs into the [Kickbase v4 API](https://github.com/kevinskyba/kickbase-api-doc)
+to (a) watch your league's transfer market and (b) run an autonomous bot
+that sets your lineup, lists falling-value players for sale, and bids on
+rising-value market listings — meant to run unattended on a schedule (cron,
+systemd timer, GitHub Actions).
 
 ## Setup
 
@@ -28,6 +29,12 @@ python -m kickbase.cli watch --interval 300
 
 # poll once and exit (what the GitHub Actions workflow uses)
 python -m kickbase.cli watch --once
+
+# print the bot's plan without touching anything
+python -m kickbase.cli bot --dry-run
+
+# run the bot for real: sets lineup, lists sales, places bids
+python -m kickbase.cli bot
 ```
 
 Credentials can be passed via `.env`/environment variables (`KICKBASE_EMAIL`,
@@ -52,6 +59,41 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 - `[REMOVED]` — a listing disappeared (sold, bought, or withdrawn)
 - `[CHANGED]` — a listing's price and/or bid count changed
 
+## The bot
+
+`bot` runs one full cycle: fetch squad + budget + market, decide, act.
+`--dry-run` prints the plan without calling any write endpoint — always run
+that first on an unfamiliar squad/league before letting it execute for real.
+
+**Lineup.** Tries every standard formation (`3-4-3` through `5-4-1`,
+goalkeeper implicit) against your fit squad (`kickbase/strategy.py`'s
+`FORMATIONS`), picks whichever fills all its slots and maximizes total
+average points (`ap`), and submits it via `POST /v4/leagues/{leagueId}/lineup`.
+Players with a non-zero status (`st`) — injured, suspended, etc. — are
+excluded from selection entirely.
+
+**Sell.** Bench players (not in the chosen lineup) with a falling market
+value trend (`mvt == 2`) get listed at their current market value, worst
+trend first, capped so the squad never drops below 11 players (you can't
+field a lineup with fewer). Listing a player doesn't remove them from your
+squad immediately — it just puts them on the market; the slot only frees up
+once someone actually buys them.
+
+**Bid.** Market listings with a rising trend (`mvt == 1`) that fit in
+remaining budget and squad space, strongest trend first, get a bid at the
+full asking price (`prc`) — not shaded up or down. See "About bid counts"
+below for why: this API doesn't expose competing bids, so there's no signal
+to bid strategically against, only whether you're willing to pay the asking
+price or not. Listings that already show an offer (`ofc > 0`, possibly from
+someone else, invisibly) are skipped rather than contested blind.
+
+None of this is claimed to be an "optimal" strategy — it's a small set of
+explicit, readable rules in `strategy.py` (pure functions, no network calls)
+that you can read end to end and adjust. There are no spending caps beyond
+"can't overdraw the budget and can't exceed the league's max squad size" —
+review a `--dry-run` plan before your first live run, and after any change
+to the strategy, since a bad rule spends real budget with nothing to undo it.
+
 ## About bid counts
 
 The upstream API doc doesn't pin down the exact field names inside a market
@@ -69,15 +111,23 @@ live response, each item looks like:
 }
 ```
 
-`ofc` is the bid/offer count, `exs` is seconds until the listing expires,
-`prc`/`mv` are asking price and market value, and `n` (not `ln`) is the last
-name. When there's at least one active bid, `ofs` lists each offer with the
-bidder's name (`unm`) and amount (`uop`); `kickbase/cli.py` shows the
-highest one as "Top Bid" in the table. There's no team-name field (`tn`) in
-this payload, only the numeric `tid` — the CLI falls back to showing that.
-`market --raw` prints the real JSON for your league if you want to double
-check or extend this (`BID_COUNT_KEYS` etc. in `cli.py` still list several
-fallback candidates in case the shape varies for other accounts).
+`exs` is seconds until the listing expires, `prc`/`mv` are asking price and
+market value, and `n` (not `ln`) is the last name. There's no team-name
+field (`tn`) in this payload, only the numeric `tid` — the CLI falls back to
+showing that.
+
+**Important caveat, confirmed by live testing with two accounts bidding on
+the same player:** `ofc`/`ofs`/`uop`/`uoid` do **not** reflect the total
+bids on a listing — they reflect only *your own* offer. Two managers bid on
+the same player in testing; each account's own `/market` call showed `ofc: 1`
+with only their own offer in `ofs`, never the other's. Checked against every
+other endpoint that touches offers (`/players/{playerId}/transfers`, the
+player-detail endpoint) and the retired v3 API (now `404`, fully gone) —
+same result everywhere. This looks like deliberate sealed-bid design (you
+find out only when a listing resolves, not who else is bidding or for how
+much), not a gap in this tool. So "Bids"/"Top Bid" in the `market` table
+mean "your own bid," not "how many people are bidding." `market --raw`
+prints the real JSON for your league if you want to double check.
 
 ## Endpoints used
 

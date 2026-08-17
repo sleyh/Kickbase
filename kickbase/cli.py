@@ -14,9 +14,11 @@ import sys
 import time
 from pathlib import Path
 
+from . import strategy
 from .client import KickbaseClient, KickbaseError
 
 STATE_DIR = Path.home() / ".cache" / "kickbase"
+MIN_SQUAD_SIZE = 11  # can't field a legal lineup with fewer players than this
 
 # Confirmed against a live /v4/leagues/{leagueId}/market response (the
 # upstream doc's own example was captured with an empty market, so these
@@ -106,7 +108,9 @@ def _print_market_table(items: list[dict]) -> None:
             str(bids) if bids is not None else "?",
             top_bid,
         ))
-    headers = ("ID", "Player", "Team", "Price", "Market Value", "Expires", "Bids", "Top Bid")
+    # "Bids"/"Your Offer": Kickbase only ever reports your own offer on a
+    # listing, never competing bids from other managers - see README.
+    headers = ("ID", "Player", "Team", "Price", "Market Value", "Expires", "Your Bid?", "Your Offer")
     widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
     fmt = "  ".join(f"{{:<{w}}}" for w in widths)
     print(fmt.format(*headers))
@@ -191,6 +195,76 @@ def cmd_watch(args: argparse.Namespace) -> None:
         time.sleep(args.interval)
 
 
+def _max_squad_size(client: KickbaseClient, league_id: str) -> int:
+    for league in client.leagues:
+        if league.get("id") == league_id:
+            return league.get("pl", 9999)
+    return 9999
+
+
+def cmd_bot(args: argparse.Namespace) -> None:
+    email, password = _load_credentials(args)
+    client = KickbaseClient(email, password)
+    client.login()
+    league_id = _resolve_league_id(client, args)
+
+    squad = client.get_squad(league_id).get("it", [])
+    budget = client.get_budget(league_id).get("b", 0)
+    market = client.get_market(league_id).get("it", [])
+    max_squad_size = _max_squad_size(client, league_id)
+
+    lineup_result = strategy.best_lineup(squad)
+    if lineup_result is None:
+        print("Not enough fit players to fill any known formation - skipping lineup change.")
+        formation, starter_ids, bench = None, [], squad
+    else:
+        formation, starter_ids, bench = lineup_result
+
+    sells = strategy.sell_candidates(bench, MIN_SQUAD_SIZE, len(squad))
+    buys = strategy.buy_candidates(market, budget, len(squad), max_squad_size)
+
+    print(f"=== Bot plan for league {league_id} ===")
+    print(f"Budget: {budget:,.0f}")
+    print(f"Squad size: {len(squad)} (max {max_squad_size})")
+    print()
+    if formation:
+        print(f"Lineup: {formation} ({len(starter_ids)} starters)")
+        by_id = {p["i"]: p for p in squad}
+        for pid in starter_ids:
+            player = by_id[pid]
+            print(f"  {_player_name(player)} (pos {player.get('pos')}, {player.get('ap', 0)} avg pts)")
+    print()
+    print(f"Sell ({len(sells)}):")
+    for player in sells:
+        print(f"  {_player_name(player)} at {player.get('mv')} (falling trend)")
+    print()
+    print(f"Bid ({len(buys)}):")
+    spend = 0
+    for item in buys:
+        price = item.get("prc") or 0
+        spend += price
+        print(f"  {_player_name(item)} at {price} (rising trend)")
+    if not buys and len(squad) >= max_squad_size:
+        print(f"  (squad at max size {max_squad_size} - listing a player for sale doesn't free a slot")
+        print(f"   until someone actually buys it, so no bids are queued this cycle)")
+    print(f"Total planned spend: {spend:,.0f} of {budget:,.0f} available")
+
+    if args.dry_run:
+        print("\n--dry-run: no changes made.")
+        return
+
+    print()
+    if formation:
+        client.set_lineup(league_id, formation, starter_ids)
+        print(f"Lineup set to {formation}.")
+    for player in sells:
+        client.list_for_sale(league_id, player["i"], int(player.get("mv", 0)))
+        print(f"Listed {_player_name(player)} for {player.get('mv')}.")
+    for item in buys:
+        client.place_bid(league_id, item["i"], int(item.get("prc", 0)))
+        print(f"Bid {item.get('prc')} on {_player_name(item)}.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kickbase transfer market CLI")
     parser.add_argument("--email", help="Kickbase account email (or KICKBASE_EMAIL env var)")
@@ -207,6 +281,14 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--interval", type=int, default=300, help="Seconds between polls (default: 300)")
     watch_parser.add_argument("--once", action="store_true", help="Poll a single time and exit")
     watch_parser.set_defaults(func=cmd_watch)
+
+    bot_parser = subparsers.add_parser(
+        "bot", help="Optimize lineup, sell falling players, bid on rising ones"
+    )
+    bot_parser.add_argument(
+        "--dry-run", action="store_true", help="Print the plan without setting the lineup or spending anything"
+    )
+    bot_parser.set_defaults(func=cmd_bot)
 
     return parser
 
