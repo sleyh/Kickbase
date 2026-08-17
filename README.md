@@ -55,14 +55,22 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 
 - **cron**: `*/5 * * * * cd /path/to/repo && .venv/bin/python -m kickbase.cli watch --once >> market.log 2>&1`
 - **systemd timer**: run `watch --once` as a `oneshot` service triggered by a `.timer` unit.
-- **GitHub Actions**: `.github/workflows/transfer-market.yml` runs `watch --once`
-  every 15 minutes, and `.github/workflows/bot.yml` runs `bot` (live, not
-  `--dry-run`) every hour — both also support manual `workflow_dispatch`.
-  Add `KICKBASE_EMAIL`, `KICKBASE_PASSWORD`, and optionally
-  `KICKBASE_LEAGUE_ID` as repository secrets for either to work. Both cache
-  `~/.cache/kickbase` between runs (the watcher needs it to diff against the
-  previous snapshot; the bot doesn't strictly need it but it saves a login
-  round-trip each hour).
+- **GitHub Actions**: three workflows, all needing `KICKBASE_EMAIL`,
+  `KICKBASE_PASSWORD`, and `KICKBASE_LEAGUE_ID` as repository secrets
+  (Settings → Secrets and variables → Actions → New repository secret on
+  the repo) to actually run. All three also support manual
+  `workflow_dispatch` for an on-demand run.
+  - `transfer-market.yml` — `watch --once`, every 15 minutes.
+  - `bot.yml` — `bot` (live, not `--dry-run`). **Schedule currently
+    paused** (rolled back to advisory-only, see "The briefing" below) —
+    only runs on manual trigger until the `schedule:` block is restored.
+  - `brief.yml` — `brief`, at 6am/10am/2pm/6pm/8pm/midnight Europe/Berlin
+    time (cron is UTC-fixed; the file has a comment on adjusting for DST).
+    This is the active one right now. Output currently goes to the
+    workflow run's log only — nothing pushes anywhere yet (Telegram is
+    planned, not wired up).
+
+  All three cache `~/.cache/kickbase` between runs.
 
 `watch` persists the last-seen market snapshot to
 `~/.cache/kickbase/market_<leagueId>.json` and on each poll reports:
