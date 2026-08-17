@@ -50,6 +50,20 @@ def _name(player: dict) -> str:
     return name or "?"
 
 
+def seller_name(player: dict) -> str:
+    """The market listing's actual seller. Manager-listed items carry a
+    "u" object with the seller's identity ({"i": ..., "n": name, ...});
+    computer-generated listings never have that field at all (confirmed
+    by listing a real player for sale and diffing its raw JSON against a
+    computer listing - "u" was the only field that differed in that
+    direction). Buying from a manager and buying from the computer market
+    are very different situations, so this is worth surfacing everywhere
+    a market item is shown.
+    """
+    seller = player.get("u")
+    return seller.get("n", "?") if seller else "Kickbase"
+
+
 def _compact(n: float) -> str:
     """Formats a currency-scale number compactly: 5,638,638 -> "5.6m",
     520,628 -> "521k", 850 -> "850"."""
@@ -193,7 +207,7 @@ def render_text(league_name: str, data: BriefingData) -> str:
         lines.append("📈 Buy advice (affordable, within squad room):")
         for p in data.buys:
             lines.append(
-                f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} "
+                f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} from {seller_name(p)} "
                 f"(score {data.buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
             )
     else:
@@ -204,7 +218,7 @@ def render_text(league_name: str, data: BriefingData) -> str:
         lines.append("🔥 Also rising, but out of budget/squad room right now:")
         for p in data.watchlist:
             lines.append(
-                f"  • {_name(p)} — {_compact(p.get('prc', 0))} "
+                f"  • {_name(p)} — {_compact(p.get('prc', 0))} from {seller_name(p)} "
                 f"(score {data.watch_scores.get(p['i'], 0)}, {p.get('ap', 0)} avg pts, {_trend_label(p)})"
             )
 
@@ -227,7 +241,8 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
     if featured:
         kind = "📈 Top buy signal" if featured in data.buys else "📉 Top sell signal"
         score = data.buy_scores.get(featured["i"]) if featured in data.buys else data.sell_scores.get(featured["i"])
-        caption = f"<b>{kind}: {e(_name(featured))}</b>\n{e(_trend_label(featured))}\nScore {score}"
+        seller_line = f"Seller: {e(seller_name(featured))}\n" if featured in data.buys else ""
+        caption = f"<b>{kind}: {e(_name(featured))}</b>\n{seller_line}{e(_trend_label(featured))}\nScore {score}"
     else:
         caption = f"<b>{e(league_name)}</b>\nNo standout buy or sell signal right now."
 
@@ -270,7 +285,7 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
         lines.append("📈 <b>Buy advice</b>")
         for p in data.buys:
             score = data.buy_scores.get(p["i"], 0)
-            lines.append(_entry(p, f"bid {_compact(p.get('prc', 0))} (score {score})"))
+            lines.append(_entry(p, f"bid {_compact(p.get('prc', 0))} from {e(seller_name(p))} (score {score})"))
     else:
         lines.append("📈 <b>Buy advice</b> — nothing affordable stands out right now.")
     lines.append("")
@@ -279,7 +294,8 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
         lines.append("🔥 <b>Also rising</b> (out of budget/room)")
         for p in data.watchlist:
             score = data.watch_scores.get(p["i"], 0)
-            lines.append(_entry(p, f"{_compact(p.get('prc', 0))} (score {score}, {p.get('ap', 0)} pts)"))
+            headline = f"{_compact(p.get('prc', 0))} from {e(seller_name(p))} (score {score}, {p.get('ap', 0)} pts)"
+            lines.append(_entry(p, headline))
         lines.append("")
 
     lines.append(

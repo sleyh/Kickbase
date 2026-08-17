@@ -103,6 +103,7 @@ def _print_market_table(items: list[dict]) -> None:
             _item_id(item),
             _player_name(item),
             str(_first_present(item, TEAM_KEYS) or ""),
+            report.seller_name(item),
             str(_first_present(item, PRICE_KEYS) or ""),
             str(_first_present(item, MARKET_VALUE_KEYS) or ""),
             str(_first_present(item, EXPIRY_KEYS) or ""),
@@ -111,7 +112,7 @@ def _print_market_table(items: list[dict]) -> None:
         ))
     # "Bids"/"Your Offer": Kickbase only ever reports your own offer on a
     # listing, never competing bids from other managers - see README.
-    headers = ("ID", "Player", "Team", "Price", "Market Value", "Expires", "Your Bid?", "Your Offer")
+    headers = ("ID", "Player", "Team", "Seller", "Price", "Market Value", "Expires", "Your Bid?", "Your Offer")
     widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
     fmt = "  ".join(f"{{:<{w}}}" for w in widths)
     print(fmt.format(*headers))

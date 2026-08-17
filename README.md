@@ -255,6 +255,17 @@ much), not a gap in this tool. So "Bids"/"Top Bid" in the `market` table
 mean "your own bid," not "how many people are bidding." `market --raw`
 prints the real JSON for your league if you want to double check.
 
+**Seller identity.** Whether a listing is a real manager selling a player
+or a computer-generated market listing matters a lot for a buy decision,
+and it turns out to be directly determinable: manager-listed items carry a
+`"u"` object with the seller's identity (`{"i": ..., "n": "Simon", ...}`);
+computer-generated listings never have that key at all. Confirmed by
+listing a real player for sale and diffing its raw JSON against a computer
+listing — `"u"` was the only field present on one and absent on the other.
+`report.seller_name()` reads this (falls back to `"Kickbase"` when absent)
+and it's shown in the `market` table's Seller column and everywhere a buy
+candidate appears in `brief`'s output.
+
 ## Endpoints used
 
 | Purpose | Endpoint |
