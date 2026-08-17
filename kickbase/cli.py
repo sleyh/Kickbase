@@ -12,9 +12,10 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-from . import predict, strategy
+from . import predict, report, strategy
 from .client import KickbaseClient, KickbaseError
 
 STATE_DIR = Path.home() / ".cache" / "kickbase"
@@ -283,6 +284,37 @@ def cmd_bot(args: argparse.Namespace) -> None:
         print(f"Bid {item.get('prc')} on {_player_name(item)}.")
 
 
+def cmd_brief(args: argparse.Namespace) -> None:
+    """Read-only summary + advice, no execution. Covers all leagues on the
+    account unless --league-id narrows it to one, since this is meant as a
+    single periodic digest (eventually pushed to one Telegram channel)
+    rather than a per-league action.
+    """
+    email, password = _load_credentials(args)
+    client = KickbaseClient(email, password)
+    client.login()
+
+    leagues = client.leagues
+    if args.league_id:
+        leagues = [l for l in leagues if l.get("id") == args.league_id]
+        if not leagues:
+            sys.exit(f"League {args.league_id} not found on this account.")
+
+    sections = []
+    for league in leagues:
+        league_id = league["id"]
+        squad = client.get_squad(league_id).get("it", [])
+        budget = client.get_budget(league_id).get("b", 0)
+        market = client.get_market(league_id).get("it", [])
+        max_squad_size = _max_squad_size(client, league_id)
+        predict.record_snapshot(league_id, squad + market)
+        sections.append(report.build_briefing(league.get("name", league_id), squad, budget, market, max_squad_size))
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    print(f"Kickbase Briefing — {timestamp}\n")
+    print(("\n" + "-" * 40 + "\n").join(sections))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kickbase transfer market CLI")
     parser.add_argument("--email", help="Kickbase account email (or KICKBASE_EMAIL env var)")
@@ -307,6 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="Print the plan without setting the lineup or spending anything"
     )
     bot_parser.set_defaults(func=cmd_bot)
+
+    brief_parser = subparsers.add_parser(
+        "brief", help="Read-only summary + advice for all leagues, no execution"
+    )
+    brief_parser.set_defaults(func=cmd_brief)
 
     return parser
 

@@ -29,8 +29,33 @@ FORMATIONS = {
 RISING, FALLING = 1, 2  # mvt values
 
 
+POSITION_NAMES = {GOALKEEPER: "goalkeepers", DEFENDER: "defenders", MIDFIELDER: "midfielders", FORWARD: "forwards"}
+# Least a squad needs at each position to fill *any* known formation.
+_FORMATION_NEEDS = [{GOALKEEPER: 1, DEFENDER: d, MIDFIELDER: m, FORWARD: f} for d, m, f in FORMATIONS.values()]
+MIN_POSITION_NEEDS = {
+    pos: min(need[pos] for need in _FORMATION_NEEDS)
+    for pos in (GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD)
+}
+
+
 def _is_available(player: dict) -> bool:
     return player.get("st", 0) == 0
+
+
+def position_shortfall(squad: list[dict]) -> dict[int, int]:
+    """Positions where available players fall short of the minimum any
+    formation needs, e.g. {FORWARD: 1} means "1 more fit forward needed."
+    Empty if some formation could be filled.
+    """
+    available = {pos: 0 for pos in MIN_POSITION_NEEDS}
+    for player in squad:
+        if _is_available(player):
+            available[player.get("pos")] = available.get(player.get("pos"), 0) + 1
+    return {
+        pos: needed - available.get(pos, 0)
+        for pos, needed in MIN_POSITION_NEEDS.items()
+        if available.get(pos, 0) < needed
+    }
 
 
 def _points(player: dict) -> float:

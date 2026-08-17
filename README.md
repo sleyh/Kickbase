@@ -1,10 +1,16 @@
 # Kickbase bot
 
 CLI that logs into the [Kickbase v4 API](https://github.com/kevinskyba/kickbase-api-doc)
-to (a) watch your league's transfer market and (b) run an autonomous bot
-that sets your lineup, lists falling-value players for sale, and bids on
-rising-value market listings — meant to run unattended on a schedule (cron,
-systemd timer, GitHub Actions).
+to watch your league's transfer market, generate a read-only advisory
+briefing, and (currently paused - see below) run an autonomous bot that
+sets your lineup, lists falling-value players for sale, and bids on
+rising-value market listings.
+
+**Current mode: advisory only.** `brief` prints a summary + recommendations
+across all your leagues and executes nothing. The autonomous `bot` command
+still exists and works (it's what `brief`'s advice is generated from - see
+`report.py`), but its scheduled GitHub Actions run is paused
+(`.github/workflows/bot.yml`) until live automation is turned back on.
 
 ## Setup
 
@@ -35,6 +41,9 @@ python -m kickbase.cli bot --dry-run
 
 # run the bot for real: sets lineup, lists sales, places bids
 python -m kickbase.cli bot
+
+# read-only summary + advice across all leagues on the account, no execution
+python -m kickbase.cli brief
 ```
 
 Credentials can be passed via `.env`/environment variables (`KICKBASE_EMAIL`,
@@ -61,6 +70,20 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 - `[NEW]` — a player was newly listed
 - `[REMOVED]` — a listing disappeared (sold, bought, or withdrawn)
 - `[CHANGED]` — a listing's price and/or bid count changed
+
+## The briefing
+
+`brief` (`kickbase/report.py`) is the current default way to use this:
+read-only, no write endpoint ever called. It loops over every league on the
+account (or one, with `--league-id`), reuses the exact same decision logic
+the bot would act on (`strategy.py`/`predict.py`), and prints it as advice
+instead of executing it — lineup recommendation, sell/buy candidates with
+the reasoning behind each, and a "rising but out of budget/room" watchlist.
+
+Intended to run six times a day (6am, 10am, 2pm, 6pm, 8pm, midnight) and
+eventually push straight to a Telegram channel instead of stdout — not
+wired up yet; for now the plan is to keep iterating on the message content
+here before adding that integration.
 
 ## The bot
 

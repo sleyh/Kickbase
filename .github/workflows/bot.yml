@@ -1,8 +1,10 @@
 name: Team bot
 
+# Schedule paused: rolled back from live autonomous trading to an
+# advisory-only briefing for now (see report.py). The bot code and this
+# workflow stay in place for when live automation is turned back on -
+# re-add the `schedule:` trigger below to resume it.
 on:
-  schedule:
-    - cron: "0 * * * *"
   workflow_dispatch: {}
 
 jobs:
