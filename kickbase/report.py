@@ -3,18 +3,44 @@ actions without executing anything.
 
 Reuses the exact same decision logic as the bot (strategy.py/predict.py),
 so the advice here is what the bot *would* do if it were live - this just
-stops short of acting on it. Kept separate from cli.py's bot command so
-the two can diverge later (e.g. a more conversational tone for Telegram)
-without touching execution code.
+stops short of acting on it.
+
+compute_briefing() does the actual work once; render_text() (terminal +
+Telegram fallback) and render_telegram() (photo + HTML + link buttons) are
+two views over the same BriefingData, so the rich Telegram format can't
+drift from what the plain digest says.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import html
+import urllib.parse
+from dataclasses import dataclass, field
 
-from . import predict, strategy
+from . import predict, strategy, telegram
 
 MOVERS_LIMIT = 5
 MIN_SQUAD_SIZE = 11
+KEYBOARD_LIMIT = 8  # cap on link buttons so the keyboard stays usable
+CDN_BASE = "https://kickbase.b-cdn.net/"
+TRANSFERMARKT_SEARCH = "https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query="
+
+
+@dataclass
+class BriefingData:
+    league_name: str
+    budget: float
+    squad_size: int
+    max_squad_size: int
+    formation: str | None
+    starters: list[dict]
+    shortfall: dict[int, int]
+    instant_sells: list[dict]
+    list_sells: list[dict]
+    buys: list[dict]
+    watchlist: list[dict]
+    sell_scores: dict[str, int] = field(default_factory=dict)
+    buy_scores: dict[str, int] = field(default_factory=dict)
+    watch_scores: dict[str, int] = field(default_factory=dict)
 
 
 def _name(player: dict) -> str:
@@ -62,10 +88,7 @@ def _trend_label(player: dict) -> str:
 def _normalized_scores(players: list[dict], score_fn) -> dict[str, int]:
     """Min-max normalizes score_fn(player) to 0-100 across this specific
     list, for display only - doesn't touch the actual ranking, which
-    strategy.py already computed on the raw score before this runs. Keeps
-    "score" from looking like a currency amount (which it isn't) or
-    confusingly retaining the sign/scale of whatever the raw formula
-    happened to produce.
+    strategy.py already computed on the raw score before this runs.
     """
     raw = {p["i"]: score_fn(p) for p in players if p.get("i")}
     if not raw:
@@ -76,16 +99,59 @@ def _normalized_scores(players: list[dict], score_fn) -> dict[str, int]:
     return {pid: round((v - lo) / (hi - lo) * 100) for pid, v in raw.items()}
 
 
-def build_briefing(
-    league_name: str,
-    squad: list[dict],
-    budget: float,
-    market: list[dict],
-    max_squad_size: int,
-) -> str:
+def _player_photo_url(player: dict) -> str | None:
+    """Kickbase's own CDN, per their doc: 'fetch images using this cdn
+    url https://kickbase.b-cdn.net' + the relative 'pim' path."""
+    path = player.get("pim")
+    return f"{CDN_BASE}{path}" if path else None
+
+
+def _transfermarkt_url(player: dict) -> str:
+    return TRANSFERMARKT_SEARCH + urllib.parse.quote(_name(player))
+
+
+def compute_briefing(squad: list[dict], budget: float, market: list[dict], max_squad_size: int) -> BriefingData:
+    lineup_result = strategy.best_lineup(squad)
+    if lineup_result is None:
+        formation, starters, bench = None, [], squad
+        shortfall = strategy.position_shortfall(squad)
+    else:
+        formation, starter_ids, bench = lineup_result
+        by_id = {p["i"]: p for p in squad}
+        starters = [by_id[pid] for pid in starter_ids]
+        shortfall = {}
+
+    instant_sells, list_sells = strategy.sell_candidates(bench, MIN_SQUAD_SIZE, len(squad))
+    buys = strategy.buy_candidates(market, budget, len(squad), max_squad_size)
+    bought_ids = {p.get("i") for p in buys}
+    watchlist = sorted(
+        (m for m in market if m.get("mvt") == strategy.RISING and m.get("i") not in bought_ids),
+        key=predict.momentum_score,
+        reverse=True,
+    )[:MOVERS_LIMIT]
+
+    return BriefingData(
+        league_name="",
+        budget=budget,
+        squad_size=len(squad),
+        max_squad_size=max_squad_size,
+        formation=formation,
+        starters=starters,
+        shortfall=shortfall,
+        instant_sells=instant_sells,
+        list_sells=list_sells,
+        buys=buys,
+        watchlist=watchlist,
+        sell_scores=_normalized_scores(instant_sells + list_sells, predict.decline_urgency),
+        buy_scores=_normalized_scores(buys, predict.momentum_score),
+        watch_scores=_normalized_scores(watchlist, predict.momentum_score),
+    )
+
+
+def render_text(league_name: str, data: BriefingData) -> str:
     lines = [
         f"*{league_name}*",
-        f"Budget: {_compact(budget)}  |  Squad: {len(squad)}/{max_squad_size}",
+        f"Budget: {_compact(data.budget)}  |  Squad: {data.squad_size}/{data.max_squad_size}",
         "ℹ️ Score = relative ranking 0-100 within each list below (not a currency amount or a "
         "prediction) from 7-day trend × points production. 24h/7d = actual observed market value "
         "change, from Kickbase's own history. next-day est. = naive extrapolation of the 7d trend, "
@@ -93,68 +159,93 @@ def build_briefing(
         "",
     ]
 
-    lineup_result = strategy.best_lineup(squad)
-    if lineup_result is None:
-        shortfall = strategy.position_shortfall(squad)
-        if shortfall:
+    if data.formation is None:
+        if data.shortfall:
             def _label(pos: int, n: int) -> str:
                 name = strategy.POSITION_NAMES[pos]
                 return f"{n} more fit {name if n != 1 else name[:-1]}"
-            gaps = ", ".join(_label(pos, n) for pos, n in shortfall.items())
+            gaps = ", ".join(_label(pos, n) for pos, n in data.shortfall.items())
             lines.append(f"⚠️ Can't fill a lineup: need {gaps} (injured/suspended players don't count).")
         else:
             lines.append("⚠️ Not enough fit players to fill a legal lineup right now.")
-        bench = squad
     else:
-        formation, starter_ids, bench = lineup_result
-        by_id = {p["i"]: p for p in squad}
-        lines.append(f"🔄 Recommended lineup: {formation}")
-        lines.append("  " + ", ".join(_name(by_id[pid]) for pid in starter_ids))
+        lines.append(f"🔄 Recommended lineup: {data.formation}")
+        lines.append("  " + ", ".join(_name(p) for p in data.starters))
     lines.append("")
 
-    instant_sells, list_sells = strategy.sell_candidates(bench, MIN_SQUAD_SIZE, len(squad))
-    if instant_sells or list_sells:
+    if data.instant_sells or data.list_sells:
         lines.append("📉 Sell advice:")
-        sell_scores = _normalized_scores(instant_sells + list_sells, predict.decline_urgency)
-        for p in instant_sells:
+        for p in data.instant_sells:
             lines.append(
                 f"  • {_name(p)} — instant-sell to Kickbase, ~{_compact(p.get('mv', 0))} "
-                f"(urgency {sell_scores.get(p['i'], 0)}, 0 pts, {_trend_label(p)})"
+                f"(urgency {data.sell_scores.get(p['i'], 0)}, 0 pts, {_trend_label(p)})"
             )
-        for p in list_sells:
+        for p in data.list_sells:
             lines.append(
                 f"  • {_name(p)} — list on market at ~{_compact(p.get('mv', 0))} "
-                f"(urgency {sell_scores.get(p['i'], 0)}, {_trend_label(p)})"
+                f"(urgency {data.sell_scores.get(p['i'], 0)}, {_trend_label(p)})"
             )
     else:
         lines.append("📉 Sell advice: nothing worth selling right now.")
     lines.append("")
 
-    buys = strategy.buy_candidates(market, budget, len(squad), max_squad_size)
-    if buys:
+    if data.buys:
         lines.append("📈 Buy advice (affordable, within squad room):")
-        buy_scores = _normalized_scores(buys, predict.momentum_score)
-        for p in buys:
+        for p in data.buys:
             lines.append(
-                f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} (score {buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
+                f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} "
+                f"(score {data.buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
             )
     else:
         lines.append("📈 Buy advice: nothing affordable stands out right now.")
     lines.append("")
 
-    bought_ids = {p.get("i") for p in buys}
-    rising = sorted(
-        (m for m in market if m.get("mvt") == strategy.RISING and m.get("i") not in bought_ids),
-        key=predict.momentum_score,
-        reverse=True,
-    )[:MOVERS_LIMIT]
-    if rising:
+    if data.watchlist:
         lines.append("🔥 Also rising, but out of budget/squad room right now:")
-        watch_scores = _normalized_scores(rising, predict.momentum_score)
-        for p in rising:
+        for p in data.watchlist:
             lines.append(
                 f"  • {_name(p)} — {_compact(p.get('prc', 0))} "
-                f"(score {watch_scores.get(p['i'], 0)}, {p.get('ap', 0)} avg pts, {_trend_label(p)})"
+                f"(score {data.watch_scores.get(p['i'], 0)}, {p.get('ap', 0)} avg pts, {_trend_label(p)})"
             )
 
     return "\n".join(lines)
+
+
+def render_telegram(league_name: str, data: BriefingData) -> dict:
+    """Rich Telegram content: a featured player photo (the strongest buy
+    candidate, or a sell candidate if there's nothing to buy) with an HTML
+    caption, the full digest as HTML text, and a link-button keyboard
+    (Transfermarkt profile search) for the players mentioned - see
+    telegram.py for why these are link buttons, not action buttons.
+
+    Returns {"photo_url": str|None, "caption": str, "text": str, "keyboard": dict}.
+    """
+    featured = (data.buys or data.list_sells or data.instant_sells or [None])[0]
+    photo_url = _player_photo_url(featured) if featured else None
+    if featured:
+        kind = "📈 Top buy signal" if featured in data.buys else "📉 Top sell signal"
+        score = data.buy_scores.get(featured["i"]) if featured in data.buys else data.sell_scores.get(featured["i"])
+        caption = (
+            f"<b>{kind}: {html.escape(_name(featured))}</b>\n"
+            f"{html.escape(_trend_label(featured))}\n"
+            f"Score {score}"
+        )
+    else:
+        caption = f"<b>{html.escape(league_name)}</b>\nNo standout buy or sell signal right now."
+
+    text_lines = [f"<b>{html.escape(league_name)}</b>"]
+    plain = render_text(league_name, data)
+    # Reuse render_text's body (skip its own bold header line) and HTML-escape it.
+    body = "\n".join(plain.split("\n")[1:])
+    text_lines.append(html.escape(body))
+    text = "\n".join(text_lines)
+
+    button_players = (data.buys + data.list_sells + data.instant_sells)[:KEYBOARD_LIMIT]
+    keyboard_rows = [[(f"🔍 {_name(p)}", _transfermarkt_url(p))] for p in button_players]
+
+    return {
+        "photo_url": photo_url,
+        "caption": caption,
+        "text": text,
+        "keyboard": telegram.inline_keyboard(keyboard_rows) if button_players else None,
+    }

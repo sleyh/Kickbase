@@ -103,10 +103,22 @@ Runs six times a day (6am, 10am, 2pm, 6pm, 8pm, midnight Europe/Berlin) via
 4. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` — in `.env` for local runs, or as GitHub Actions
    repository secrets (alongside the `KICKBASE_*` ones) for the scheduled workflow.
 
-`telegram.send_message()` uses Telegram's Markdown parse mode (matches the `*bold*` league-name
-formatting already in the briefing text) and falls back to plain text if that fails to parse, and
-splits into multiple messages if the text exceeds Telegram's 4096-character limit (mainly relevant
-to `--all-leagues`).
+**Rich formatting.** `--telegram` sends more than the plain digest per league:
+1. A **photo** of the strongest signal (top buy candidate, or a sell candidate if there's nothing
+   to buy) from Kickbase's own CDN, with a short HTML caption.
+2. The **full digest** as an HTML-formatted message.
+3. An **inline keyboard** — one link button per player mentioned (buy candidates first, then sell
+   candidates, capped at 8), opening that player's Transfermarkt search page.
+
+These are link buttons, not action buttons — tapping one opens a URL, nothing more. A real
+"Bid"/"Sell" *action* button needs something listening for the tap and executing it the moment it
+happens, which doesn't fit GitHub Actions' schedule-and-exit model; that's future work, not
+implemented yet. `kickbase/telegram.py` uses HTML parse mode (stricter but more predictable than
+Markdown - `html.escape()` handles special characters in player names safely) with a plain-text
+fallback if parsing fails, and splits text into multiple messages if it exceeds Telegram's
+4096-character limit (mainly relevant to `--all-leagues`). `report.py`'s `compute_briefing()` /
+`render_text()` / `render_telegram()` split ensures the rich version can never say something
+different from the plain digest - both render the same underlying `BriefingData`.
 
 ## The bot
 

@@ -322,17 +322,19 @@ def cmd_brief(args: argparse.Namespace) -> None:
         leagues = [l for l in client.leagues if l.get("id") == league_id]
 
     sections = []
+    telegram_payloads = []
     for league in leagues:
         league_id = league["id"]
+        league_name = league.get("name", league_id)
         squad = client.get_squad(league_id).get("it", [])
         budget = client.get_budget(league_id).get("b", 0)
         market = client.get_market(league_id).get("it", [])
         max_squad_size = _max_squad_size(client, league_id)
         _enrich_with_history(client, league_id, squad)
         _enrich_with_history(client, league_id, market)
-        sections.append(
-            report.build_briefing(league.get("name", league_id), squad, budget, market, max_squad_size)
-        )
+        data = report.compute_briefing(squad, budget, market, max_squad_size)
+        sections.append(report.render_text(league_name, data))
+        telegram_payloads.append(report.render_telegram(league_name, data))
         predict.record_snapshot(league_id, squad + market)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -344,7 +346,10 @@ def cmd_brief(args: argparse.Namespace) -> None:
         chat_id = os.environ.get("TELEGRAM_CHAT_ID")
         if not token or not chat_id:
             sys.exit("--telegram needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set.")
-        telegram.send_message(token, chat_id, full_text)
+        for payload in telegram_payloads:
+            if payload["photo_url"]:
+                telegram.send_photo(token, chat_id, payload["photo_url"], payload["caption"])
+            telegram.send_message(token, chat_id, payload["text"], payload["keyboard"])
         print("\n(sent to Telegram)")
 
 
