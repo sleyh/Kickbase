@@ -127,3 +127,25 @@ def load_history(league_id: str, player_id: str, db_path: Path = HISTORY_DB_PATH
     conn.close()
     cols = ["captured_at", "day", "mv", "mvt", "sdmvt", "tfhmvt", "ap", "p"]
     return [dict(zip(cols, row)) for row in rows]
+
+
+def observed_delta(
+    league_id: str, player_id: str, current_mv: int | None, db_path: Path = HISTORY_DB_PATH
+) -> int | None:
+    """Market value change since the most recent snapshot we recorded for
+    this player - our own substitute for sdmvt on market listings, which
+    the live API never provides (see momentum_score). None if we haven't
+    seen this player before or current_mv is unknown.
+
+    Caller must query this *before* calling record_snapshot() for the
+    current run, or "most recent" would just be the run in progress.
+    """
+    if current_mv is None:
+        return None
+    history = load_history(league_id, player_id, db_path)
+    if not history:
+        return None
+    previous_mv = history[-1].get("mv")
+    if previous_mv is None:
+        return None
+    return current_mv - previous_mv

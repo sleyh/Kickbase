@@ -308,8 +308,13 @@ def cmd_brief(args: argparse.Namespace) -> None:
         budget = client.get_budget(league_id).get("b", 0)
         market = client.get_market(league_id).get("it", [])
         max_squad_size = _max_squad_size(client, league_id)
+        # Must build the report before recording this run's snapshot, or
+        # observed_delta()'s "most recent prior snapshot" would just be
+        # the one from this run.
+        sections.append(
+            report.build_briefing(league_id, league.get("name", league_id), squad, budget, market, max_squad_size)
+        )
         predict.record_snapshot(league_id, squad + market)
-        sections.append(report.build_briefing(league.get("name", league_id), squad, budget, market, max_squad_size))
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     print(f"Kickbase Briefing — {timestamp}\n")

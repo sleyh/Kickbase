@@ -24,14 +24,32 @@ def _name(player: dict) -> str:
     return name or "?"
 
 
+def _delta_label(delta: int | None) -> str:
+    """Formats a market-value change for display, or explains why there
+    isn't one yet."""
+    if delta is None:
+        return "Δmv: no trend data yet (first time seen)"
+    sign = "+" if delta >= 0 else ""
+    return f"Δmv {sign}{delta:,.0f} since last check"
+
+
 def build_briefing(
+    league_id: str,
     league_name: str,
     squad: list[dict],
     budget: float,
     market: list[dict],
     max_squad_size: int,
 ) -> str:
-    lines = [f"*{league_name}*", f"Budget: {budget:,.0f}  |  Squad: {len(squad)}/{max_squad_size}", ""]
+    lines = [
+        f"*{league_name}*",
+        f"Budget: {budget:,.0f}  |  Squad: {len(squad)}/{max_squad_size}",
+        "ℹ️ Score = momentum ranking (value trend × points production, higher = stronger signal). "
+        "Δmv = observed market value change since the last time this ran - builds up over the "
+        "first few days as history accumulates, and only moves when Kickbase updates values "
+        "(roughly once daily).",
+        "",
+    ]
 
     lineup_result = strategy.best_lineup(squad)
     if lineup_result is None:
@@ -56,9 +74,12 @@ def build_briefing(
     if instant_sells or list_sells:
         lines.append("📉 Sell advice:")
         for p in instant_sells:
-            lines.append(f"  • {_name(p)} — instant-sell to Kickbase, ~{p.get('mv', 0):,.0f} (0 pts, falling, won't recover)")
+            # Squad items carry sdmvt (the API's own recent-delta figure) directly.
+            delta = _delta_label(p.get("sdmvt"))
+            lines.append(f"  • {_name(p)} — instant-sell to Kickbase, ~{p.get('mv', 0):,.0f} (0 pts, {delta})")
         for p in list_sells:
-            lines.append(f"  • {_name(p)} — list on market at ~{p.get('mv', 0):,.0f} (falling, still scoring)")
+            delta = _delta_label(p.get("sdmvt"))
+            lines.append(f"  • {_name(p)} — list on market at ~{p.get('mv', 0):,.0f} ({delta})")
     else:
         lines.append("📉 Sell advice: nothing worth selling right now.")
     lines.append("")
@@ -68,7 +89,10 @@ def build_briefing(
         lines.append("📈 Buy advice (affordable, within squad room):")
         for p in buys:
             score = predict.momentum_score(p)
-            lines.append(f"  • {_name(p)} — bid {p.get('prc', 0):,.0f} (score {score:.0f})")
+            # Market listings never carry sdmvt (see momentum_score) - this
+            # is our own history-based substitute instead.
+            delta = _delta_label(predict.observed_delta(league_id, p.get("i"), p.get("mv")))
+            lines.append(f"  • {_name(p)} — bid {p.get('prc', 0):,.0f} (score {score:.0f}, {delta})")
     else:
         lines.append("📈 Buy advice: nothing affordable stands out right now.")
     lines.append("")

@@ -144,10 +144,16 @@ What's there today:
   player still producing points is treated as *less* urgent to sell than
   the same decline with nothing behind it, since it reads more like a
   temporary dip.
+- `observed_delta()` — the briefing's substitute for `sdmvt` on market
+  listings (buy candidates), since the live API never provides it there:
+  compares a player's current value against the most recent snapshot
+  *we've* recorded for them. Shown in `brief`'s output as `Δmv`. Needs at
+  least two snapshots spanning an actual Kickbase value update (roughly
+  once daily) before it shows anything but `+0` or "no trend data yet."
 - `record_snapshot()` — logs every squad + market player's features
   (`mv`, `mvt`, `sdmvt`, `tfhmvt`, `ap`, `p`, day) to a local SQLite
-  database (`~/.cache/kickbase/history.db`) on every bot run. This is the
-  actual foundation: once enough days of real (features → next-day actual
+  database (`~/.cache/kickbase/history.db`) on every bot/brief run. This is
+  the actual foundation: once enough days of real (features → next-day actual
   value change) pairs accumulate, that data is what a genuine regression
   model would train on to replace the hand-weighted formulas above.
   `load_history()` reads it back per-player for whenever that's ready.
