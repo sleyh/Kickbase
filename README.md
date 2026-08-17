@@ -93,15 +93,42 @@ two tiers:
   instant sell.
 
 **Bid.** Market listings with a rising trend (`mvt == 1`) that fit in
-remaining budget and squad space, strongest trend first, get a bid at the
-full asking price (`prc`) — not shaded up or down. See "About bid counts"
-below for why: this API doesn't expose competing bids, so there's no signal
-to bid strategically against, only whether you're willing to pay the asking
-price or not. Listings that already show an offer (`ofc > 0`, possibly from
-someone else, invisibly) are skipped rather than contested blind.
+remaining budget and squad space, strongest signal first (see "Prediction"
+below), get a bid at the full asking price (`prc`) — not shaded up or down.
+See "About bid counts" below for why: this API doesn't expose competing
+bids, so there's no signal to bid strategically against, only whether
+you're willing to pay the asking price or not. Listings that already show
+an offer (`ofc > 0`, possibly from someone else, invisibly) are skipped
+rather than contested blind.
+
+## Prediction
+
+`kickbase/predict.py` is the ranking signal behind buy/sell ordering, and
+it's honest about what it currently is: **not a trained model.** Kickbase
+doesn't expose historical market-value time series through any endpoint we
+found, and this project had zero snapshots of its own before this file
+existed — training something on no data would just be fitting noise.
+
+What's there today:
+- `momentum_score()` — ranks buy candidates. Squad items carry `sdmvt`
+  (recent value delta); market listings never do (confirmed against live
+  data — the key is entirely absent, not zero), so it falls back to
+  average points (`ap`) alone, rewarding a rising player who's also
+  actually producing over one who isn't.
+- `decline_urgency()` — ranks sell candidates the opposite way: a falling
+  player still producing points is treated as *less* urgent to sell than
+  the same decline with nothing behind it, since it reads more like a
+  temporary dip.
+- `record_snapshot()` — logs every squad + market player's features
+  (`mv`, `mvt`, `sdmvt`, `tfhmvt`, `ap`, `p`, day) to a local SQLite
+  database (`~/.cache/kickbase/history.db`) on every bot run. This is the
+  actual foundation: once enough days of real (features → next-day actual
+  value change) pairs accumulate, that data is what a genuine regression
+  model would train on to replace the hand-weighted formulas above.
+  `load_history()` reads it back per-player for whenever that's ready.
 
 None of this is claimed to be an "optimal" strategy — it's a small set of
-explicit, readable rules in `strategy.py` (pure functions, no network calls)
+explicit, readable rules in `strategy.py`/`predict.py` (pure functions, no network calls)
 that you can read end to end and adjust. There are no spending caps beyond
 "can't overdraw the budget and can't exceed the league's max squad size" —
 review a `--dry-run` plan before your first live run, and after any change

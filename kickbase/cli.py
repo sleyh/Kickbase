@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import strategy
+from . import predict, strategy
 from .client import KickbaseClient, KickbaseError
 
 STATE_DIR = Path.home() / ".cache" / "kickbase"
@@ -213,6 +213,10 @@ def cmd_bot(args: argparse.Namespace) -> None:
     market = client.get_market(league_id).get("it", [])
     max_squad_size = _max_squad_size(client, league_id)
 
+    # Log this run's features so a real model can eventually be trained on
+    # them (see predict.py) - append-only, safe on every run.
+    predict.record_snapshot(league_id, squad + market)
+
     lineup_result = strategy.best_lineup(squad)
     if lineup_result is None:
         print("Not enough fit players to fill any known formation - skipping lineup change.")
@@ -245,14 +249,16 @@ def cmd_bot(args: argparse.Namespace) -> None:
     print()
     print(f"List on market ({len(list_sells)}):")
     for player in list_sells:
-        print(f"  {_player_name(player)} at {player.get('mv')} (falling trend)")
+        score = predict.decline_urgency(player)
+        print(f"  {_player_name(player)} at {player.get('mv')} (score {score:,.0f})")
     print()
     print(f"Bid ({len(buys)}):")
     spend = 0
     for item in buys:
         price = item.get("prc") or 0
         spend += price
-        print(f"  {_player_name(item)} at {price} (rising trend)")
+        score = predict.momentum_score(item)
+        print(f"  {_player_name(item)} at {price} (score {score:,.0f})")
     if not buys and projected_squad_size >= max_squad_size:
         print(f"  (squad at max size {max_squad_size} even after instant sells - listing a player for")
         print(f"   sale doesn't free a slot until someone buys it, so no bids are queued this cycle)")

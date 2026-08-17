@@ -11,6 +11,8 @@ etc.) is treated as unavailable for the lineup.
 """
 from __future__ import annotations
 
+from .predict import decline_urgency, momentum_score
+
 GOALKEEPER, DEFENDER, MIDFIELDER, FORWARD = 1, 2, 3, 4
 
 # DEF-MID-FWD counts; goalkeeper (1) is implicit and always required.
@@ -78,11 +80,15 @@ def sell_candidates(
     - list_for_market: falling trend but still scoring points - list for
       other managers instead, since a real bid might beat Kickbase's price.
 
+    Ranked by decline_urgency() (see predict.py) rather than raw value
+    delta, so a falling player who's still producing points isn't ranked
+    as urgently to sell as one falling with nothing behind it.
+
     Returns (instant_sell, list_for_market).
     """
     room = max(0, squad_size - min_squad_size)
     candidates = [p for p in bench if p.get("mvt") == FALLING]
-    candidates.sort(key=lambda p: p.get("sdmvt", 0))  # most negative trend first
+    candidates.sort(key=decline_urgency)  # most urgent (most negative) first
     capped = candidates[:room]
 
     instant_sell = [p for p in capped if not _points(p)]
@@ -96,7 +102,12 @@ def buy_candidates(
     squad_size: int,
     max_squad_size: int,
 ) -> list[dict]:
-    """Market listings with a rising trend, affordable, best momentum first."""
+    """Market listings with a rising trend, affordable, best momentum first.
+
+    Ranked by momentum_score() (see predict.py): a rise backed by real
+    points production ranks above a same-sized rise with no output behind
+    it.
+    """
     room = max(0, max_squad_size - squad_size)
     if room == 0:
         return []
@@ -104,7 +115,7 @@ def buy_candidates(
         item for item in market_items
         if item.get("mvt") == RISING and (item.get("prc") or 0) <= budget and not item.get("ofc")
     ]
-    candidates.sort(key=lambda p: p.get("sdmvt", 0), reverse=True)  # strongest upward trend first
+    candidates.sort(key=momentum_score, reverse=True)  # strongest performance-backed rise first
 
     picked = []
     remaining = budget
