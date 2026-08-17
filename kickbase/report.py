@@ -64,6 +64,17 @@ def seller_name(player: dict) -> str:
     return seller.get("n", "?") if seller else "Kickbase"
 
 
+def _split_by_seller(players: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(from_kickbase, from_managers) - same order, just partitioned so
+    they can be shown as separate sections instead of interleaved. Doesn't
+    change ranking or which players were selected, only how they're
+    grouped for display.
+    """
+    from_kickbase = [p for p in players if not p.get("u")]
+    from_managers = [p for p in players if p.get("u")]
+    return from_kickbase, from_managers
+
+
 def _compact(n: float) -> str:
     """Formats a currency-scale number compactly: 5,638,638 -> "5.6m",
     520,628 -> "521k", 850 -> "850"."""
@@ -204,23 +215,44 @@ def render_text(league_name: str, data: BriefingData) -> str:
     lines.append("")
 
     if data.buys:
-        lines.append("📈 Buy advice (affordable, within squad room):")
-        for p in data.buys:
-            lines.append(
-                f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} from {seller_name(p)} "
-                f"(score {data.buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
-            )
+        buys_kb, buys_mgr = _split_by_seller(data.buys)
+        if buys_kb:
+            lines.append("📈 Buy advice - from Kickbase (affordable, within squad room):")
+            for p in buys_kb:
+                lines.append(
+                    f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} "
+                    f"(score {data.buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
+                )
+            lines.append("")
+        if buys_mgr:
+            lines.append("🧑 Buy advice - from other managers (affordable, within squad room):")
+            for p in buys_mgr:
+                lines.append(
+                    f"  • {_name(p)} — bid {_compact(p.get('prc', 0))} from {seller_name(p)} "
+                    f"(score {data.buy_scores.get(p['i'], 0)}, {_trend_label(p)})"
+                )
+            lines.append("")
     else:
         lines.append("📈 Buy advice: nothing affordable stands out right now.")
-    lines.append("")
+        lines.append("")
 
     if data.watchlist:
-        lines.append("🔥 Also rising, but out of budget/squad room right now:")
-        for p in data.watchlist:
-            lines.append(
-                f"  • {_name(p)} — {_compact(p.get('prc', 0))} from {seller_name(p)} "
-                f"(score {data.watch_scores.get(p['i'], 0)}, {p.get('ap', 0)} avg pts, {_trend_label(p)})"
-            )
+        watch_kb, watch_mgr = _split_by_seller(data.watchlist)
+        if watch_kb:
+            lines.append("🔥 Also rising from Kickbase, but out of budget/squad room right now:")
+            for p in watch_kb:
+                lines.append(
+                    f"  • {_name(p)} — {_compact(p.get('prc', 0))} "
+                    f"(score {data.watch_scores.get(p['i'], 0)}, {p.get('ap', 0)} avg pts, {_trend_label(p)})"
+                )
+            lines.append("")
+        if watch_mgr:
+            lines.append("🔥🧑 Also rising from other managers, but out of budget/squad room right now:")
+            for p in watch_mgr:
+                lines.append(
+                    f"  • {_name(p)} — {_compact(p.get('prc', 0))} from {seller_name(p)} "
+                    f"(score {data.watch_scores.get(p['i'], 0)}, {p.get('ap', 0)} avg pts, {_trend_label(p)})"
+                )
 
     return "\n".join(lines)
 
@@ -282,21 +314,40 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
     lines.append("")
 
     if data.buys:
-        lines.append("📈 <b>Buy advice</b>")
-        for p in data.buys:
-            score = data.buy_scores.get(p["i"], 0)
-            lines.append(_entry(p, f"bid {_compact(p.get('prc', 0))} from {e(seller_name(p))} (score {score})"))
+        buys_kb, buys_mgr = _split_by_seller(data.buys)
+        if buys_kb:
+            lines.append("📈 <b>Buy advice — from Kickbase</b>")
+            for p in buys_kb:
+                score = data.buy_scores.get(p["i"], 0)
+                lines.append(_entry(p, f"bid {_compact(p.get('prc', 0))} (score {score})"))
+            lines.append("")
+        if buys_mgr:
+            lines.append("🧑 <b>Buy advice — from other managers</b>")
+            for p in buys_mgr:
+                score = data.buy_scores.get(p["i"], 0)
+                headline = f"bid {_compact(p.get('prc', 0))} from {e(seller_name(p))} (score {score})"
+                lines.append(_entry(p, headline))
+            lines.append("")
     else:
         lines.append("📈 <b>Buy advice</b> — nothing affordable stands out right now.")
-    lines.append("")
+        lines.append("")
 
     if data.watchlist:
-        lines.append("🔥 <b>Also rising</b> (out of budget/room)")
-        for p in data.watchlist:
-            score = data.watch_scores.get(p["i"], 0)
-            headline = f"{_compact(p.get('prc', 0))} from {e(seller_name(p))} (score {score}, {p.get('ap', 0)} pts)"
-            lines.append(_entry(p, headline))
-        lines.append("")
+        watch_kb, watch_mgr = _split_by_seller(data.watchlist)
+        if watch_kb:
+            lines.append("🔥 <b>Also rising — from Kickbase</b> (out of budget/room)")
+            for p in watch_kb:
+                score = data.watch_scores.get(p["i"], 0)
+                headline = f"{_compact(p.get('prc', 0))} (score {score}, {p.get('ap', 0)} pts)"
+                lines.append(_entry(p, headline))
+            lines.append("")
+        if watch_mgr:
+            lines.append("🔥🧑 <b>Also rising — from other managers</b> (out of budget/room)")
+            for p in watch_mgr:
+                score = data.watch_scores.get(p["i"], 0)
+                headline = f"{_compact(p.get('prc', 0))} from {e(seller_name(p))} (score {score}, {p.get('ap', 0)} pts)"
+                lines.append(_entry(p, headline))
+            lines.append("")
 
     lines.append(
         "<i>Score = 0-100 relative ranking (7d trend × points), not a currency amount. "
