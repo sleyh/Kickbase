@@ -64,11 +64,11 @@ reused between runs so scheduled runs don't hammer the login endpoint.
   - `bot.yml` — `bot` (live, not `--dry-run`). **Schedule currently
     paused** (rolled back to advisory-only, see "The briefing" below) —
     only runs on manual trigger until the `schedule:` block is restored.
-  - `brief.yml` — `brief`, at 6am/10am/2pm/6pm/8pm/midnight Europe/Berlin
-    time (cron is UTC-fixed; the file has a comment on adjusting for DST).
-    This is the active one right now. Output currently goes to the
-    workflow run's log only — nothing pushes anywhere yet (Telegram is
-    planned, not wired up).
+  - `brief.yml` — `brief --telegram`, at 6am/10am/2pm/6pm/8pm/midnight
+    Europe/Berlin time (cron is UTC-fixed; the file has a comment on
+    adjusting for DST). This is the active one right now, and also needs
+    `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` as repository secrets (see
+    "The briefing" below) to actually push anywhere.
 
   All three cache `~/.cache/kickbase` between runs.
 
@@ -90,10 +90,23 @@ and prints it as advice instead of executing it — lineup recommendation,
 sell/buy candidates with the reasoning behind each, and a "rising but out
 of budget/room" watchlist.
 
-Intended to run six times a day (6am, 10am, 2pm, 6pm, 8pm, midnight) and
-eventually push straight to a Telegram channel instead of stdout — not
-wired up yet; for now the plan is to keep iterating on the message content
-here before adding that integration.
+Runs six times a day (6am, 10am, 2pm, 6pm, 8pm, midnight Europe/Berlin) via
+`.github/workflows/brief.yml`, and pushes to a Telegram channel via
+`--telegram` (`kickbase/telegram.py`).
+
+**Telegram setup:**
+1. Get your bot's token from [@BotFather](https://t.me/BotFather) (`/mybots` → pick the bot → API Token).
+2. Add the bot as an **administrator** of the target channel, with "Post Messages" permission.
+3. Post any message in the channel, then call `GET https://api.telegram.org/bot<TOKEN>/getUpdates` —
+   the response includes a `my_chat_member` (or `channel_post`) update with the channel's numeric `chat.id`
+   (negative, e.g. `-1003685452737`).
+4. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` — in `.env` for local runs, or as GitHub Actions
+   repository secrets (alongside the `KICKBASE_*` ones) for the scheduled workflow.
+
+`telegram.send_message()` uses Telegram's Markdown parse mode (matches the `*bold*` league-name
+formatting already in the briefing text) and falls back to plain text if that fails to parse, and
+splits into multiple messages if the text exceeds Telegram's 4096-character limit (mainly relevant
+to `--all-leagues`).
 
 ## The bot
 

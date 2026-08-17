@@ -29,4 +29,6 @@ jobs:
           KICKBASE_EMAIL: ${{ secrets.KICKBASE_EMAIL }}
           KICKBASE_PASSWORD: ${{ secrets.KICKBASE_PASSWORD }}
           KICKBASE_LEAGUE_ID: ${{ secrets.KICKBASE_LEAGUE_ID }}
-        run: python -m kickbase.cli brief
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m kickbase.cli brief --telegram

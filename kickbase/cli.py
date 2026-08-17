@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import predict, report, strategy
+from . import predict, report, strategy, telegram
 from .client import KickbaseClient, KickbaseError
 
 STATE_DIR = Path.home() / ".cache" / "kickbase"
@@ -336,8 +336,16 @@ def cmd_brief(args: argparse.Namespace) -> None:
         predict.record_snapshot(league_id, squad + market)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    print(f"Kickbase Briefing — {timestamp}\n")
-    print(("\n" + "-" * 40 + "\n").join(sections))
+    full_text = f"Kickbase Briefing — {timestamp}\n\n" + ("\n" + "-" * 40 + "\n").join(sections)
+    print(full_text)
+
+    if args.telegram:
+        token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        if not token or not chat_id:
+            sys.exit("--telegram needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set.")
+        telegram.send_message(token, chat_id, full_text)
+        print("\n(sent to Telegram)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -370,6 +378,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     brief_parser.add_argument(
         "--all-leagues", action="store_true", help="Cover every league on the account instead of just one"
+    )
+    brief_parser.add_argument(
+        "--telegram", action="store_true",
+        help="Also push the briefing to Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
     )
     brief_parser.set_defaults(func=cmd_brief)
 
