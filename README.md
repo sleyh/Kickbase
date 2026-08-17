@@ -61,19 +61,23 @@ live response, each item looks like:
 
 ```json
 {
-  "i": "2804", "fn": "Jamal", "n": "Musiala", "tid": "2",
-  "pos": 3, "mv": 35254956, "prc": 35254956,
-  "ofc": 0, "exs": 35624, "dt": "2026-08-17T10:08:00Z"
+  "i": "3232", "fn": "Luca", "n": "Pfeiffer", "tid": "77",
+  "pos": 4, "mv": 4698937, "prc": 4698937,
+  "ofc": 1, "exs": 2896, "uop": 4698937, "uoid": "1442868",
+  "ofs": [{"u": "1442868", "unm": "Simon", "uop": 4698937, "st": 0}],
+  "dt": "2026-08-17T10:08:00Z"
 }
 ```
 
 `ofc` is the bid/offer count, `exs` is seconds until the listing expires,
 `prc`/`mv` are asking price and market value, and `n` (not `ln`) is the last
-name. There's no team-name field (`tn`) in this payload, only the numeric
-`tid` — `kickbase/cli.py` falls back to showing that. `market --raw` prints
-the real JSON for your league if you want to double check or extend this
-(`BID_COUNT_KEYS` etc. in `cli.py` still list several fallback candidates
-in case the shape varies for other accounts).
+name. When there's at least one active bid, `ofs` lists each offer with the
+bidder's name (`unm`) and amount (`uop`); `kickbase/cli.py` shows the
+highest one as "Top Bid" in the table. There's no team-name field (`tn`) in
+this payload, only the numeric `tid` — the CLI falls back to showing that.
+`market --raw` prints the real JSON for your league if you want to double
+check or extend this (`BID_COUNT_KEYS` etc. in `cli.py` still list several
+fallback candidates in case the shape varies for other accounts).
 
 ## Endpoints used
 

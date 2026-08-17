@@ -30,6 +30,9 @@ PRICE_KEYS = ("prc", "price")
 MARKET_VALUE_KEYS = ("mv",)
 EXPIRY_KEYS = ("exs", "exd", "expiry", "dt")
 BID_COUNT_KEYS = ("ofc", "no", "noo", "ofn", "numOffers", "offerCount", "bids", "nob")
+OFFER_LIST_KEYS = ("ofs",)  # per-offer detail: [{"unm": bidder name, "uop": offer amount, ...}]
+OFFER_AMOUNT_KEYS = ("uop", "price", "amount")
+OFFER_BIDDER_KEYS = ("unm", "name")
 ITEM_ID_KEYS = ("i", "id", "pi")
 
 
@@ -38,6 +41,15 @@ def _first_present(item: dict, keys: tuple[str, ...]):
         if key in item and item[key] not in (None, ""):
             return item[key]
     return None
+
+
+def _top_bid(item: dict) -> tuple[int | float | None, str | None]:
+    """Highest offer amount + bidder name from the item's offer list, if any."""
+    offers = _first_present(item, OFFER_LIST_KEYS)
+    if not offers:
+        return None, None
+    top = max(offers, key=lambda o: _first_present(o, OFFER_AMOUNT_KEYS) or 0)
+    return _first_present(top, OFFER_AMOUNT_KEYS), _first_present(top, OFFER_BIDDER_KEYS)
 
 
 def _player_name(item: dict) -> str:
@@ -82,6 +94,8 @@ def _print_market_table(items: list[dict]) -> None:
     rows = []
     for item in items:
         bids = _first_present(item, BID_COUNT_KEYS)
+        bid_amount, bidder = _top_bid(item)
+        top_bid = f"{bid_amount} ({bidder})" if bid_amount is not None else ""
         rows.append((
             _item_id(item),
             _player_name(item),
@@ -90,15 +104,16 @@ def _print_market_table(items: list[dict]) -> None:
             str(_first_present(item, MARKET_VALUE_KEYS) or ""),
             str(_first_present(item, EXPIRY_KEYS) or ""),
             str(bids) if bids is not None else "?",
+            top_bid,
         ))
-    headers = ("ID", "Player", "Team", "Price", "Market Value", "Expires", "Bids")
+    headers = ("ID", "Player", "Team", "Price", "Market Value", "Expires", "Bids", "Top Bid")
     widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
     fmt = "  ".join(f"{{:<{w}}}" for w in widths)
     print(fmt.format(*headers))
     print(fmt.format(*("-" * w for w in widths)))
     for row in rows:
         print(fmt.format(*row))
-    if all(r[-1] == "?" for r in rows):
+    if all(r[-2] == "?" for r in rows):
         print(
             "\nNote: no known bid-count field matched on any item. "
             "Run with --raw to inspect the actual JSON and identify the "
@@ -135,10 +150,13 @@ def _diff_market(previous: dict[str, dict], current: dict[str, dict]) -> None:
         new_price = _first_present(new_item, PRICE_KEYS)
         old_bids = _first_present(old_item, BID_COUNT_KEYS)
         new_bids = _first_present(new_item, BID_COUNT_KEYS)
-        if old_price != new_price or old_bids != new_bids:
+        old_bid_amount, _ = _top_bid(old_item)
+        new_bid_amount, new_bidder = _top_bid(new_item)
+        if old_price != new_price or old_bids != new_bids or old_bid_amount != new_bid_amount:
+            top_bid = f"{new_bid_amount} ({new_bidder})" if new_bid_amount is not None else "none"
             print(
                 f"[CHANGED] {_item_id(new_item):>8}  {_player_name(new_item)}  "
-                f"price {old_price} -> {new_price}  bids {old_bids} -> {new_bids}"
+                f"price {old_price} -> {new_price}  bids {old_bids} -> {new_bids}  top bid now {top_bid}"
             )
 
 
