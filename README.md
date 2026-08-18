@@ -262,9 +262,18 @@ and it turns out to be directly determinable: manager-listed items carry a
 computer-generated listings never have that key at all. Confirmed by
 listing a real player for sale and diffing its raw JSON against a computer
 listing — `"u"` was the only field present on one and absent on the other.
-`report.seller_name()` reads this (falls back to `"Kickbase"` when absent)
-and it's shown in the `market` table's Seller column and everywhere a buy
-candidate appears in `brief`'s output.
+`report.seller_name()` reads this (falls back to `"Kickbase"` when absent),
+shown in the `market` table's Seller column and split into separate "from
+Kickbase" / "from other managers" sections everywhere a buy candidate
+appears in `brief`'s output (`report._split_by_seller()`) rather than
+interleaved.
+
+**Deadlines.** `exs` (seconds until a listing closes) follows the same
+pattern as `"u"` above: only ever present on computer-generated listings.
+Manager-listed items never carry it - consistent with them staying up
+until bought or withdrawn rather than closing on a timer. `brief` shows
+this as `⏰ Xh Ym left` for computer listings, or an explicit `⏳ no
+deadline` note for manager ones, rather than leaving it blank.
 
 ## Endpoints used
 
