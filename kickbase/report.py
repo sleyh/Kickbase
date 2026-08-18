@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from . import predict, strategy, telegram
 
 MOVERS_LIMIT = 5
+TOP_PERFORMERS_LIMIT = 5
 MIN_SQUAD_SIZE = 11
 KEYBOARD_LIMIT = 8  # cap on link buttons so the keyboard stays usable
 CDN_BASE = "https://kickbase.b-cdn.net/"
@@ -38,6 +39,7 @@ class BriefingData:
     list_sells: list[dict]
     buys: list[dict]
     watchlist: list[dict]
+    top_performers: list[dict]
     sell_scores: dict[str, int] = field(default_factory=dict)
     buy_scores: dict[str, int] = field(default_factory=dict)
     watch_scores: dict[str, int] = field(default_factory=dict)
@@ -80,17 +82,6 @@ def seller_name(player: dict) -> str:
     """
     seller = player.get("u")
     return seller.get("n", "?") if seller else "Kickbase"
-
-
-def _split_by_seller(players: list[dict]) -> tuple[list[dict], list[dict]]:
-    """(from_kickbase, from_managers) - same order, just partitioned so
-    they can be shown as separate sections instead of interleaved. Doesn't
-    change ranking or which players were selected, only how they're
-    grouped for display.
-    """
-    from_kickbase = [p for p in players if not p.get("u")]
-    from_managers = [p for p in players if p.get("u")]
-    return from_kickbase, from_managers
 
 
 def _compact(n: float) -> str:
@@ -195,14 +186,34 @@ def compute_briefing(squad: list[dict], budget: float, market: list[dict], max_s
         starters = [by_id[pid] for pid in starter_ids]
         shortfall = {}
 
+    # Manager-listed players (see seller_name()) are excluded from every
+    # advice section below: buying from another manager is a different,
+    # negotiation-flavored decision (they set the price, there's no
+    # closing deadline) than buying from the computer market, and mixing
+    # the two into one ranked list made the advice harder to act on than
+    # just leaving them out.
+    kickbase_market = [m for m in market if not m.get("u")]
+
     instant_sells, list_sells = strategy.sell_candidates(bench, MIN_SQUAD_SIZE, len(squad))
-    buys = strategy.buy_candidates(market, budget, len(squad), max_squad_size)
+    buys = strategy.buy_candidates(kickbase_market, budget, len(squad), max_squad_size)
     bought_ids = {p.get("i") for p in buys}
     watchlist = sorted(
-        (m for m in market if m.get("mvt") == strategy.RISING and m.get("i") not in bought_ids),
+        (m for m in kickbase_market if m.get("mvt") == strategy.RISING and m.get("i") not in bought_ids),
         key=predict.momentum_score,
         reverse=True,
     )[:MOVERS_LIMIT]
+
+    # Standout talent by output (avg points, then total points) - ranked
+    # independently of buys/watchlist above (which are trend- and
+    # budget-gated), so a proven performer (e.g. an established MVP) always
+    # surfaces here even when their value trend is flat/falling, the price
+    # is out of budget, or they already appear in one of those other
+    # sections for an unrelated reason.
+    top_performers = sorted(
+        (m for m in kickbase_market if (m.get("ap") or 0) > 0),
+        key=lambda p: (p.get("ap") or 0, p.get("p") or 0),
+        reverse=True,
+    )[:TOP_PERFORMERS_LIMIT]
 
     return BriefingData(
         league_name="",
@@ -216,6 +227,7 @@ def compute_briefing(squad: list[dict], budget: float, market: list[dict], max_s
         list_sells=list_sells,
         buys=buys,
         watchlist=watchlist,
+        top_performers=top_performers,
         sell_scores=_normalized_scores(instant_sells + list_sells, predict.decline_urgency),
         buy_scores=_normalized_scores(buys, predict.momentum_score),
         watch_scores=_normalized_scores(watchlist, predict.momentum_score),
@@ -276,43 +288,33 @@ def render_text(league_name: str, data: BriefingData) -> str:
     lines.append("")
 
     if data.buys:
-        buys_kb, buys_mgr = _split_by_seller(data.buys)
-        if buys_kb:
-            lines.append("📈 Buy advice — Kickbase (affordable):")
-            for p in buys_kb:
-                score = data.buy_scores.get(p["i"], 0)
-                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}"]
-                lines.append(_plain_entry(p, stats, with_deadline=True))
-            lines.append("")
-        if buys_mgr:
-            lines.append("🧑 Buy advice — other managers (affordable):")
-            for p in buys_mgr:
-                score = data.buy_scores.get(p["i"], 0)
-                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"👤 {seller_name(p)}"]
-                lines.append(_plain_entry(p, stats, with_deadline=True))
-            lines.append("")
+        lines.append("📈 Buy advice (affordable):")
+        for p in data.buys:
+            score = data.buy_scores.get(p["i"], 0)
+            stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}"]
+            lines.append(_plain_entry(p, stats, with_deadline=True))
+        lines.append("")
     else:
         lines.append("📈 Buy advice: nothing affordable stands out right now.")
         lines.append("")
 
+    if data.top_performers:
+        lines.append("⭐ Top performers on the market:")
+        for p in data.top_performers:
+            afford = (p.get("prc") or 0) <= data.budget
+            stats = [
+                f"⚽ {p.get('ap', 0)} avg pts (Σ {p.get('p', 0)})",
+                f"💰 bid {_compact(p.get('prc', 0))}" + ("" if afford else " (over budget)"),
+            ]
+            lines.append(_plain_entry(p, stats, with_deadline=True))
+        lines.append("")
+
     if data.watchlist:
-        watch_kb, watch_mgr = _split_by_seller(data.watchlist)
-        if watch_kb:
-            lines.append("🔥 Rising, unaffordable — Kickbase:")
-            for p in watch_kb:
-                score = data.watch_scores.get(p["i"], 0)
-                stats = [f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"⚽ {p.get('ap', 0)} pts"]
-                lines.append(_plain_entry(p, stats, with_deadline=True))
-            lines.append("")
-        if watch_mgr:
-            lines.append("🔥🧑 Rising, unaffordable — other managers:")
-            for p in watch_mgr:
-                score = data.watch_scores.get(p["i"], 0)
-                stats = [
-                    f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}",
-                    f"⚽ {p.get('ap', 0)} pts", f"👤 {seller_name(p)}",
-                ]
-                lines.append(_plain_entry(p, stats, with_deadline=True))
+        lines.append("🔥 Rising, unaffordable:")
+        for p in data.watchlist:
+            score = data.watch_scores.get(p["i"], 0)
+            stats = [f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"⚽ {p.get('ap', 0)} pts"]
+            lines.append(_plain_entry(p, stats, with_deadline=True))
 
     return "\n".join(lines)
 
@@ -328,18 +330,21 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
     """
     e = html.escape
 
-    featured = (data.buys or data.list_sells or data.instant_sells or [None])[0]
+    featured = (data.buys or data.top_performers or data.list_sells or data.instant_sells or [None])[0]
     photo_url = _player_photo_url(featured) if featured else None
     if featured:
-        kind = "📈 Top buy signal" if featured in data.buys else "📉 Top sell signal"
-        score = data.buy_scores.get(featured["i"]) if featured in data.buys else data.sell_scores.get(featured["i"])
-        is_buy = featured in data.buys
+        is_market_item = featured in data.buys or featured in data.top_performers
+        if featured in data.buys:
+            kind, score = "📈 Top buy signal", data.buy_scores.get(featured["i"])
+        elif featured in data.top_performers:
+            kind, score = "⭐ Top performer", None
+        else:
+            kind, score = "📉 Top sell signal", data.sell_scores.get(featured["i"])
         caption_lines = [f"<b>{kind}: {e(_name(featured))}</b>"]
-        if is_buy:
-            caption_lines.append(f"👤 {e(seller_name(featured))}")
+        if is_market_item:
             caption_lines.append(e(_deadline_label(featured)))
         caption_lines.extend(e(ln) for ln in _trend_lines(featured))
-        caption_lines.append(f"🎯 Score {score}")
+        caption_lines.append(f"🎯 Score {score}" if score is not None else f"⚽ {featured.get('ap', 0)} avg pts")
         caption = "\n".join(caption_lines)
     else:
         caption = f"<b>{e(league_name)}</b>\nNo standout buy or sell signal right now."
@@ -389,49 +394,39 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
     lines.append("")
 
     if data.buys:
-        buys_kb, buys_mgr = _split_by_seller(data.buys)
-        if buys_kb:
-            lines.append("📈 <b>Buy advice — Kickbase</b> (affordable)")
-            for p in buys_kb:
-                score = data.buy_scores.get(p["i"], 0)
-                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}"]
-                lines.append(_entry(p, stats, with_deadline=True))
-            lines.append("")
-        if buys_mgr:
-            lines.append("🧑 <b>Buy advice — other managers</b> (affordable)")
-            for p in buys_mgr:
-                score = data.buy_scores.get(p["i"], 0)
-                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"👤 {e(seller_name(p))}"]
-                lines.append(_entry(p, stats, with_deadline=True))
-            lines.append("")
+        lines.append("📈 <b>Buy advice</b> (affordable)")
+        for p in data.buys:
+            score = data.buy_scores.get(p["i"], 0)
+            stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}"]
+            lines.append(_entry(p, stats, with_deadline=True))
+        lines.append("")
     else:
         lines.append("📈 <b>Buy advice</b> — nothing affordable stands out right now.")
         lines.append("")
 
+    if data.top_performers:
+        lines.append("⭐ <b>Top performers on the market</b>")
+        for p in data.top_performers:
+            afford = (p.get("prc") or 0) <= data.budget
+            stats = [
+                f"⚽ {p.get('ap', 0)} avg pts (Σ {p.get('p', 0)})",
+                f"💰 bid {_compact(p.get('prc', 0))}" + ("" if afford else " (over budget)"),
+            ]
+            lines.append(_entry(p, stats, with_deadline=True))
+        lines.append("")
+
     if data.watchlist:
-        watch_kb, watch_mgr = _split_by_seller(data.watchlist)
-        if watch_kb:
-            lines.append("🔥 <b>Rising, unaffordable — Kickbase</b>")
-            for p in watch_kb:
-                score = data.watch_scores.get(p["i"], 0)
-                stats = [f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"⚽ {p.get('ap', 0)} pts"]
-                lines.append(_entry(p, stats, with_deadline=True))
-            lines.append("")
-        if watch_mgr:
-            lines.append("🔥🧑 <b>Rising, unaffordable — other managers</b>")
-            for p in watch_mgr:
-                score = data.watch_scores.get(p["i"], 0)
-                stats = [
-                    f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}",
-                    f"⚽ {p.get('ap', 0)} pts", f"👤 {e(seller_name(p))}",
-                ]
-                lines.append(_entry(p, stats, with_deadline=True))
-            lines.append("")
+        lines.append("🔥 <b>Rising, unaffordable</b>")
+        for p in data.watchlist:
+            score = data.watch_scores.get(p["i"], 0)
+            stats = [f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"⚽ {p.get('ap', 0)} pts"]
+            lines.append(_entry(p, stats, with_deadline=True))
+        lines.append("")
 
     lines.extend(f"<i>{e(ln)}</i>" for ln in LEGEND_LINES)
     text = "\n".join(lines)
 
-    button_players = (data.buys + data.list_sells + data.instant_sells)[:KEYBOARD_LIMIT]
+    button_players = (data.buys + data.top_performers + data.list_sells + data.instant_sells)[:KEYBOARD_LIMIT]
     keyboard_rows = [[(f"🔍 {_name(p)}", _transfermarkt_url(p))] for p in button_players]
 
     return {

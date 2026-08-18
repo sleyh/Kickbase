@@ -87,8 +87,14 @@ read-only, no write endpoint ever called. Scoped to one league by default
 `--all-leagues` to cover every league on the account instead), it reuses
 the exact same decision logic the bot would act on (`strategy.py`/`predict.py`)
 and prints it as advice instead of executing it — lineup recommendation,
-sell/buy candidates with the reasoning behind each, and a "rising but out
-of budget/room" watchlist.
+sell/buy candidates with the reasoning behind each, a "top performers"
+list (best avg/total points on the market right now, independent of
+value trend or affordability — the earlier trend-only ranking could miss
+an established, proven performer like a league MVP whose price is simply
+flat or out of reach), and a "rising but out of budget/room" watchlist.
+All three market-driven sections only ever consider computer-generated
+listings (see "Seller identity" below) — a real manager's asking price
+isn't a signal about the player, just about what that manager wants.
 
 Runs six times a day (6am, 10am, 2pm, 6pm, 8pm, midnight Europe/Berlin) via
 `.github/workflows/brief.yml`, and pushes to a Telegram channel via
@@ -104,11 +110,11 @@ Runs six times a day (6am, 10am, 2pm, 6pm, 8pm, midnight Europe/Berlin) via
    repository secrets (alongside the `KICKBASE_*` ones) for the scheduled workflow.
 
 **Rich formatting.** `--telegram` sends more than the plain digest per league:
-1. A **photo** of the strongest signal (top buy candidate, or a sell candidate if there's nothing
-   to buy) from Kickbase's own CDN, with a short HTML caption.
+1. A **photo** of the strongest signal (top buy candidate, else top performer, else a sell
+   candidate if there's nothing else) from Kickbase's own CDN, with a short HTML caption.
 2. The **full digest** as an HTML-formatted message.
-3. An **inline keyboard** — one link button per player mentioned (buy candidates first, then sell
-   candidates, capped at 8), opening that player's Transfermarkt search page.
+3. An **inline keyboard** — one link button per player mentioned (buy candidates, then top
+   performers, then sell candidates, capped at 8), opening that player's Transfermarkt search page.
 
 These are link buttons, not action buttons — tapping one opens a URL, nothing more. A real
 "Bid"/"Sell" *action* button needs something listening for the tap and executing it the moment it
@@ -262,11 +268,15 @@ and it turns out to be directly determinable: manager-listed items carry a
 computer-generated listings never have that key at all. Confirmed by
 listing a real player for sale and diffing its raw JSON against a computer
 listing — `"u"` was the only field present on one and absent on the other.
-`report.seller_name()` reads this (falls back to `"Kickbase"` when absent),
-shown in the `market` table's Seller column and split into separate "from
-Kickbase" / "from other managers" sections everywhere a buy candidate
-appears in `brief`'s output (`report._split_by_seller()`) rather than
-interleaved.
+`report.seller_name()` reads this (falls back to `"Kickbase"` when absent)
+and is still shown in the `market` table's Seller column. `brief`'s advice
+sections go further and drop manager-listed players entirely
+(`report.compute_briefing()` filters `market` to items without `"u"`
+before any buy/watch/top-performer ranking runs) — buying from another
+manager is a different, negotiation-flavored decision (they set the
+price, there's no closing deadline) than buying from the computer market,
+so mixing the two into one ranked list made the advice harder to act on
+than just leaving manager listings out.
 
 **Deadlines.** `exs` (seconds until a listing closes) follows the same
 pattern as `"u"` above: only ever present on computer-generated listings.
