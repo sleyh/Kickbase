@@ -49,8 +49,12 @@ python -m kickbase.cli brief
 # since the last run (what the GitHub Actions workflow uses, every 15 min)
 python -m kickbase.cli alert --telegram
 
-# daily recap: each squad player's 24h value change + total gain/loss
+# daily recap: each squad player's 24h value change + total gain/loss,
+# plus every competitor's squad value and gain/loss
 python -m kickbase.cli squad-value --telegram
+
+# same, but skip fetching competitor squads (faster)
+python -m kickbase.cli squad-value --telegram --no-competitors
 ```
 
 Credentials can be passed via `.env`/environment variables (`KICKBASE_EMAIL`,
@@ -163,6 +167,28 @@ with no history yet (just bought, nothing to diff against) is listed
 separately rather than silently dropped. Text-only Telegram message, no
 photo - a per-player list like this doesn't map to a single
 featured-player card the way `brief`'s digest does.
+
+**Competitors.** The message also includes every other league member's
+squad value and today's gain/loss, ranked best to worst -
+`cli._fetch_competitors()`. This corrects an earlier, wrong conclusion in
+this README: initial probing found only `/v4/leagues/{leagueId}/ranking`
+(whose team-value field is `0.0` for everyone, including my own
+78m-value squad - not real data) and a `squad?userId=` parameter that
+turned out to be silently ignored, always returning your own squad
+regardless of the id passed. Both looked like confirmation that
+competitor squads were walled off entirely, the same way bids are.
+They're not - re-reading the API doc's actual OpenAPI spec (not just
+skimming the README) surfaced `GET
+/v4/leagues/{leagueId}/managers/{managerId}/squad`, missed on the first
+pass because it's nested under `managers/`, not the `squad`/`users` paths
+tried first. Confirmed live: returns a real, distinct squad per manager
+id from `ranking`'s member list. Player items there use `pi`/`pn`
+instead of `get_squad()`'s `i`/`fn`+`n` - normalized in
+`cli._normalize_manager_squad_items()` so the same history-enrichment and
+display helpers work on them unchanged. One extra `get_market_value_history`
+call per competitor player (~10-13 players × 6 competitors here), so this
+adds real runtime to the daily job (~15s total) but nothing outsized for
+a once-a-day cron; `--no-competitors` skips it if that's ever a problem.
 
 ## The briefing
 
@@ -402,6 +428,8 @@ deadline` note for manager ones, rather than leaving it blank.
 | Player detail | `GET /v4/leagues/{leagueId}/players/{playerId}` |
 | Player market value history (24h/7d/etc.) | `GET /v4/leagues/{leagueId}/players/{playerId}/marketValue/{timeframe}` |
 | Owned squad | `GET /v4/leagues/{leagueId}/squad` |
+| Another manager's squad | `GET /v4/leagues/{leagueId}/managers/{managerId}/squad` |
+| League standings / member list | `GET /v4/leagues/{leagueId}/ranking` |
 | Budget | `GET /v4/leagues/{leagueId}/me/budget` |
 | Get/set lineup | `GET`/`POST /v4/leagues/{leagueId}/lineup` |
 | List a player for sale | `POST /v4/leagues/{leagueId}/market` |

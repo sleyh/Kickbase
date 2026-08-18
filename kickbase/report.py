@@ -344,7 +344,9 @@ def render_new_listing_alert(player: dict) -> dict:
     }
 
 
-def render_squad_value_update(league_name: str, squad: list[dict], budget: float) -> str:
+def render_squad_value_update(
+    league_name: str, squad: list[dict], budget: float, competitors: list[dict] | None = None
+) -> str:
     """Daily squad market-value recap: every owned player's 24h change
     plus the total gain/loss across the whole squad. Meant to fire once a
     day right after Kickbase's own daily value recalculation (see cli.py's
@@ -358,6 +360,12 @@ def render_squad_value_update(league_name: str, squad: list[dict], budget: float
     is budget-plus-players, not just players - a big sale can grow the
     budget line while shrinking the squad-value line, and neither one
     alone tells the full story.
+
+    competitors, if given, is a list of {"name", "total_value",
+    "total_delta"} (total_delta may be None if none of that manager's
+    players had value history yet) - one entry per other league member,
+    from cli.py's per-manager squad fetch (GET
+    /v4/leagues/{leagueId}/managers/{managerId}/squad).
     """
     e = html.escape
     with_delta = [p for p in squad if p.get("d1") is not None]
@@ -383,6 +391,24 @@ def render_squad_value_update(league_name: str, squad: list[dict], budget: float
     if without_delta:
         lines.append("")
         lines.append("ℹ️ No value history yet: " + ", ".join(e(_name(p)) for p in without_delta))
+
+    if competitors:
+        lines.append("")
+        lines.append("🏆 <b>Competitors (squad value today)</b>")
+        ranked = sorted(
+            competitors,
+            key=lambda c: c["total_delta"] if c["total_delta"] is not None else float("-inf"),
+            reverse=True,
+        )
+        for comp in ranked:
+            delta = comp["total_delta"]
+            if delta is None:
+                icon, delta_str = "⚪", "no data yet"
+            else:
+                icon = "🟢" if delta > 0 else "🔴" if delta < 0 else "⚪"
+                delta_str = e(_signed(delta))
+            lines.append(f"{icon} <b>{e(comp['name'])}</b>  {e(_compact(comp['total_value']))}  ({delta_str})")
+
     return "\n".join(lines)
 
 

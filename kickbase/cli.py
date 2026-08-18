@@ -374,6 +374,51 @@ def _enrich_with_history(client: KickbaseClient, league_id: str, players: list[d
         player.update(predict.history_deltas(history))
 
 
+def _normalize_manager_squad_items(items: list[dict]) -> list[dict]:
+    """get_manager_squad()'s player items use "pi"/"pn" (player id/name)
+    instead of get_squad()'s "i"/"fn"+"n" - remap in place so the shared
+    report.py/_enrich_with_history helpers (which expect "i" and "n")
+    work unchanged on another manager's squad too.
+    """
+    for item in items:
+        item["i"] = item.get("pi")
+        item["n"] = item.get("pn")
+    return items
+
+
+def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | None:
+    """Every other league member's squad value + today's gain/loss, for
+    the daily squad-value update's "Competitors" section. Returns None
+    (rather than a partial/misleading list) if the ranking call itself
+    fails - a single competitor's squad failing to load just drops that
+    one manager instead, since one member's odd data shouldn't hide
+    everyone else's.
+    """
+    try:
+        ranking = client.get_ranking(league_id)
+    except KickbaseError as exc:
+        print(f"Warning: couldn't fetch league ranking for competitors: {exc}", file=sys.stderr)
+        return None
+
+    competitors = []
+    for manager in ranking.get("us", []):
+        manager_id = manager.get("i")
+        if not manager_id or manager_id == client.user_id:
+            continue
+        try:
+            squad = client.get_manager_squad(league_id, manager_id).get("it", [])
+        except KickbaseError as exc:
+            print(f"Warning: couldn't fetch squad for {manager.get('n', manager_id)}: {exc}", file=sys.stderr)
+            continue
+        _normalize_manager_squad_items(squad)
+        _enrich_with_history(client, league_id, squad)
+        total_value = sum(p.get("mv", 0) or 0 for p in squad)
+        deltas = [p.get("d1") for p in squad if p.get("d1") is not None]
+        total_delta = sum(deltas) if deltas else None
+        competitors.append({"name": manager.get("n", "?"), "total_value": total_value, "total_delta": total_delta})
+    return competitors
+
+
 def cmd_bot(args: argparse.Namespace) -> None:
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
@@ -509,9 +554,11 @@ def cmd_brief(args: argparse.Namespace) -> None:
 def cmd_squad_value(args: argparse.Namespace) -> None:
     """Daily squad market-value recap, separate from `brief`'s advice
     digest: every owned player's 24h change plus the total gain/loss
-    across the whole squad. Meant to run once a day shortly after
-    Kickbase's own daily value recalculation (see
-    .github/workflows/squad-value.yml), not tied to brief's schedule.
+    across the whole squad, plus (unless --no-competitors) every other
+    league member's squad value and gain/loss for the same comparison.
+    Meant to run once a day shortly after Kickbase's own daily value
+    recalculation (see .github/workflows/squad-value.yml), not tied to
+    brief's schedule.
     """
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
@@ -534,7 +581,8 @@ def cmd_squad_value(args: argparse.Namespace) -> None:
         squad = client.get_squad(league_id).get("it", [])
         budget = client.get_budget(league_id).get("b", 0)
         _enrich_with_history(client, league_id, squad)
-        text = report.render_squad_value_update(league_name, squad, budget)
+        competitors = None if args.no_competitors else _fetch_competitors(client, league_id)
+        text = report.render_squad_value_update(league_name, squad, budget, competitors)
         print(text)
         print()
         if args.telegram:
@@ -603,6 +651,10 @@ def build_parser() -> argparse.ArgumentParser:
     squad_value_parser.add_argument(
         "--telegram", action="store_true",
         help="Push the recap to Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
+    )
+    squad_value_parser.add_argument(
+        "--no-competitors", action="store_true",
+        help="Skip fetching other league members' squads (faster, own squad only)"
     )
     squad_value_parser.set_defaults(func=cmd_squad_value)
 

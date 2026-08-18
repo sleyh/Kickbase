@@ -26,6 +26,7 @@ class KickbaseClient:
         self.session = requests.Session()
         self.token: str | None = None
         self.leagues: list[dict] = []
+        self.user_id: str | None = None
 
     def _headers(self) -> dict:
         headers = {"Accept": "application/json"}
@@ -53,6 +54,7 @@ class KickbaseClient:
         data = resp.json()
         self.token = data["tkn"]
         self.leagues = data.get("srvl", [])
+        self.user_id = data.get("u", {}).get("id")
         self._save_cached_token()
 
     def _load_cached_token(self) -> bool:
@@ -66,6 +68,7 @@ class KickbaseClient:
             return False
         self.token = cached["tkn"]
         self.leagues = cached.get("srvl", [])
+        self.user_id = cached.get("user_id")
         return True
 
     def _save_cached_token(self) -> None:
@@ -74,6 +77,7 @@ class KickbaseClient:
             "email": self.email,
             "tkn": self.token,
             "srvl": self.leagues,
+            "user_id": self.user_id,
         }))
         TOKEN_CACHE_PATH.chmod(0o600)
 
@@ -129,6 +133,32 @@ class KickbaseClient:
     def get_budget(self, league_id: str) -> dict:
         """{"b": available budget, "pbas": ..., "bs": ...}."""
         return self._get(f"/v4/leagues/{league_id}/me/budget")
+
+    def get_ranking(self, league_id: str) -> dict:
+        """League standings: {"us": [{"i": user id, "n": name, ...}, ...]}
+        - one entry per manager including yourself. The doc-listed field
+        that looks like team value (`tv`) reads 0.0 for everyone in
+        practice (confirmed live, including on my own squad which is
+        worth tens of millions) - not a usable market-value source, just
+        the manager list itself.
+        """
+        return self._get(f"/v4/leagues/{league_id}/ranking")
+
+    def get_manager_squad(self, league_id: str, manager_id: str) -> dict:
+        """Another league member's squad - found via the doc's OpenAPI
+        spec (GET /v4/leagues/{leagueId}/managers/{managerId}/squad),
+        missed on first pass since it's nested under `managers/`, not the
+        `squad`/`users` paths tried first. Confirmed live to return a real,
+        distinct squad per manager (not a silent fallback to your own,
+        unlike passing ?userId= to the plain /squad endpoint, which is
+        ignored entirely).
+
+        Response shape differs from get_squad(): {"u": manager's user id,
+        "unm": name, "uim": avatar, "it": [...]}, and each player item
+        uses "pi"/"pn" (player id/name) instead of get_squad()'s "i"/"fn"+"n" -
+        see cli.py's _normalize_manager_squad_items().
+        """
+        return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/squad")
 
     def get_lineup(self, league_id: str) -> dict:
         return self._get(f"/v4/leagues/{league_id}/lineup")
