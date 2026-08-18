@@ -50,6 +50,24 @@ def _name(player: dict) -> str:
     return name or "?"
 
 
+_POSITION_ICONS = {
+    strategy.GOALKEEPER: "🧤",
+    strategy.DEFENDER: "🛡️",
+    strategy.MIDFIELDER: "⚙️",
+    strategy.FORWARD: "⚡",
+}
+
+
+def _lineup_lines(starters: list[dict]) -> list[str]:
+    """Starters grouped by position, one short line per position, instead
+    of one long comma-joined line - an 11-name line reliably wraps
+    mid-name on a phone."""
+    by_pos: dict[int, list[str]] = {}
+    for p in starters:
+        by_pos.setdefault(p.get("pos"), []).append(_name(p))
+    return [f"{_POSITION_ICONS.get(pos, '•')} {', '.join(names)}" for pos, names in by_pos.items()]
+
+
 def seller_name(player: dict) -> str:
     """The market listing's actual seller. Manager-listed items carry a
     "u" object with the seller's identity ({"i": ..., "n": name, ...});
@@ -91,24 +109,26 @@ def _signed(n: float) -> str:
     return f"{'+' if n >= 0 else ''}{_compact(n)}"
 
 
-def _trend_label(player: dict) -> str:
-    """Formats a player's real 24h/7d market-value change (see
+def _trend_lines(player: dict) -> list[str]:
+    """Each observed/predicted market-value figure (see
     predict.history_deltas, attached by cli.py's _enrich_with_history
-    before this is ever called) plus the naive next-day projection, or
-    explains why none of that is available yet."""
+    before this is ever called) as its own short line, rather than one
+    long combined line - Telegram word-wraps a long line wherever it
+    happens to run out of width, which can land mid-phrase; keeping each
+    stat on its own short line means there's nothing left for it to wrap.
+    """
     d1, d7 = player.get("d1"), player.get("d7")
     if d1 is None and d7 is None:
-        return "📊 no value history available for this player yet"
-    parts = []
+        return ["📊 no value history yet"]
+    lines = []
     if d1 is not None:
-        parts.append(f"24h {_signed(d1)}")
+        lines.append(f"📊 24h {_signed(d1)}")
     if d7 is not None:
-        parts.append(f"7d {_signed(d7)}")
-    trend = "📊 " + " · ".join(parts) if parts else ""
+        lines.append(f"📊 7d {_signed(d7)}")
     projection = predict.naive_projection(player)
     if projection is not None:
-        trend += f"  🔮 next-day est. {_signed(projection)}"
-    return trend
+        lines.append(f"🔮 next-day est. {_signed(projection)}")
+    return lines
 
 
 def _format_duration(seconds: float) -> str:
@@ -202,14 +222,18 @@ def compute_briefing(squad: list[dict], budget: float, market: list[dict], max_s
     )
 
 
+LEGEND_LINES = [
+    "ℹ️ 🎯 score = 0-100 rank, not a currency amount",
+    "📊 24h/7d = real observed value change",
+    "🔮 next-day est. = naive guess, not a forecast",
+]
+
+
 def render_text(league_name: str, data: BriefingData) -> str:
     lines = [
         f"*{league_name}*",
         f"Budget: {_compact(data.budget)}  |  Squad: {data.squad_size}/{data.max_squad_size}",
-        "ℹ️ Score = relative ranking 0-100 within each list below (not a currency amount or a "
-        "prediction) from 7-day trend × points production. 24h/7d = actual observed market value "
-        "change, from Kickbase's own history. next-day est. = naive extrapolation of the 7d trend, "
-        "not a real forecast.",
+        *LEGEND_LINES,
         "",
     ]
 
@@ -219,28 +243,34 @@ def render_text(league_name: str, data: BriefingData) -> str:
                 name = strategy.POSITION_NAMES[pos]
                 return f"{n} more fit {name if n != 1 else name[:-1]}"
             gaps = ", ".join(_label(pos, n) for pos, n in data.shortfall.items())
-            lines.append(f"⚠️ Can't fill a lineup: need {gaps} (injured/suspended players don't count).")
+            lines.append("⚠️ Can't fill a lineup - injured/suspended don't count. Need:")
+            lines.append(f"   {gaps}")
         else:
             lines.append("⚠️ Not enough fit players to fill a legal lineup right now.")
     else:
         lines.append(f"🔄 Recommended lineup: {data.formation}")
-        lines.append("  " + ", ".join(_name(p) for p in data.starters))
+        lines.extend(f"  {ln}" for ln in _lineup_lines(data.starters))
     lines.append("")
 
-    def _plain_entry(p: dict, headline: str, with_deadline: bool = False) -> str:
-        block = f"  • {_name(p)} — {headline}\n     {_trend_label(p)}"
+    def _plain_entry(p: dict, stat_lines: list[str], with_deadline: bool = False) -> str:
+        """One player as a bullet with every stat on its own short,
+        deliberate line - see _trend_lines() for why."""
+        body_lines = stat_lines + _trend_lines(p)
         if with_deadline:
-            block += f"\n     {_deadline_label(p)}"
-        return block
+            body_lines.append(_deadline_label(p))
+        indented = "\n".join(f"     {ln}" for ln in body_lines)
+        return f"  • {_name(p)}\n{indented}"
 
     if data.instant_sells or data.list_sells:
         lines.append("📉 Sell advice:")
         for p in data.instant_sells:
             urgency = data.sell_scores.get(p["i"], 0)
-            lines.append(_plain_entry(p, f"instant-sell to Kickbase, ~💰{_compact(p.get('mv', 0))} (🎯{urgency}, 0 pts)"))
+            stats = [f"💰 instant-sell to Kickbase ~{_compact(p.get('mv', 0))} (0 pts)", f"🎯 urgency {urgency}"]
+            lines.append(_plain_entry(p, stats))
         for p in data.list_sells:
             urgency = data.sell_scores.get(p["i"], 0)
-            lines.append(_plain_entry(p, f"list on market at ~💰{_compact(p.get('mv', 0))} (🎯{urgency})"))
+            stats = [f"💰 list on market ~{_compact(p.get('mv', 0))}", f"🎯 urgency {urgency}"]
+            lines.append(_plain_entry(p, stats))
     else:
         lines.append("📉 Sell advice: nothing worth selling right now.")
     lines.append("")
@@ -248,17 +278,18 @@ def render_text(league_name: str, data: BriefingData) -> str:
     if data.buys:
         buys_kb, buys_mgr = _split_by_seller(data.buys)
         if buys_kb:
-            lines.append("📈 Buy advice - from Kickbase (affordable, within squad room):")
+            lines.append("📈 Buy advice — Kickbase (affordable):")
             for p in buys_kb:
                 score = data.buy_scores.get(p["i"], 0)
-                lines.append(_plain_entry(p, f"bid 💰{_compact(p.get('prc', 0))} (🎯{score})", with_deadline=True))
+                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}"]
+                lines.append(_plain_entry(p, stats, with_deadline=True))
             lines.append("")
         if buys_mgr:
-            lines.append("🧑 Buy advice - from other managers (affordable, within squad room):")
+            lines.append("🧑 Buy advice — other managers (affordable):")
             for p in buys_mgr:
                 score = data.buy_scores.get(p["i"], 0)
-                headline = f"bid 💰{_compact(p.get('prc', 0))} from 👤{seller_name(p)} (🎯{score})"
-                lines.append(_plain_entry(p, headline, with_deadline=True))
+                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"👤 {seller_name(p)}"]
+                lines.append(_plain_entry(p, stats, with_deadline=True))
             lines.append("")
     else:
         lines.append("📈 Buy advice: nothing affordable stands out right now.")
@@ -267,18 +298,21 @@ def render_text(league_name: str, data: BriefingData) -> str:
     if data.watchlist:
         watch_kb, watch_mgr = _split_by_seller(data.watchlist)
         if watch_kb:
-            lines.append("🔥 Also rising from Kickbase, but out of budget/squad room right now:")
+            lines.append("🔥 Rising, unaffordable — Kickbase:")
             for p in watch_kb:
                 score = data.watch_scores.get(p["i"], 0)
-                headline = f"💰{_compact(p.get('prc', 0))} (🎯{score}, ⚽{p.get('ap', 0)} pts)"
-                lines.append(_plain_entry(p, headline, with_deadline=True))
+                stats = [f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"⚽ {p.get('ap', 0)} pts"]
+                lines.append(_plain_entry(p, stats, with_deadline=True))
             lines.append("")
         if watch_mgr:
-            lines.append("🔥🧑 Also rising from other managers, but out of budget/squad room right now:")
+            lines.append("🔥🧑 Rising, unaffordable — other managers:")
             for p in watch_mgr:
                 score = data.watch_scores.get(p["i"], 0)
-                headline = f"💰{_compact(p.get('prc', 0))} from 👤{seller_name(p)} (🎯{score}, ⚽{p.get('ap', 0)} pts)"
-                lines.append(_plain_entry(p, headline, with_deadline=True))
+                stats = [
+                    f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}",
+                    f"⚽ {p.get('ap', 0)} pts", f"👤 {seller_name(p)}",
+                ]
+                lines.append(_plain_entry(p, stats, with_deadline=True))
 
     return "\n".join(lines)
 
@@ -300,12 +334,13 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
         kind = "📈 Top buy signal" if featured in data.buys else "📉 Top sell signal"
         score = data.buy_scores.get(featured["i"]) if featured in data.buys else data.sell_scores.get(featured["i"])
         is_buy = featured in data.buys
-        seller_line = f"👤 Seller: {e(seller_name(featured))}\n" if is_buy else ""
-        deadline_line = f"{e(_deadline_label(featured))}\n" if is_buy else ""
-        caption = (
-            f"<b>{kind}: {e(_name(featured))}</b>\n{seller_line}{deadline_line}"
-            f"{e(_trend_label(featured))}\n🎯 Score {score}"
-        )
+        caption_lines = [f"<b>{kind}: {e(_name(featured))}</b>"]
+        if is_buy:
+            caption_lines.append(f"👤 {e(seller_name(featured))}")
+            caption_lines.append(e(_deadline_label(featured)))
+        caption_lines.extend(e(ln) for ln in _trend_lines(featured))
+        caption_lines.append(f"🎯 Score {score}")
+        caption = "\n".join(caption_lines)
     else:
         caption = f"<b>{e(league_name)}</b>\nNo standout buy or sell signal right now."
 
@@ -321,28 +356,34 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
                 name = strategy.POSITION_NAMES[pos]
                 return f"{n} more fit {name if n != 1 else name[:-1]}"
             gaps = ", ".join(_label(pos, n) for pos, n in data.shortfall.items())
-            lines.append(f"⚠️ <b>Can't fill a lineup</b> — need {e(gaps)}")
+            lines.append("⚠️ <b>Can't fill a lineup</b>")
+            lines.append(f"   need {e(gaps)}")
         else:
             lines.append("⚠️ <b>Not enough fit players</b> for a legal lineup right now.")
     else:
         lines.append(f"🔄 <b>Lineup: {e(data.formation)}</b>")
-        lines.append(e(", ".join(_name(p) for p in data.starters)))
+        lines.extend(e(ln) for ln in _lineup_lines(data.starters))
     lines.append("")
 
-    def _entry(p: dict, headline: str, with_deadline: bool = False) -> str:
-        block = f"• <b>{e(_name(p))}</b> — {headline}\n   {e(_trend_label(p))}"
+    def _entry(p: dict, stat_lines: list[str], with_deadline: bool = False) -> str:
+        """One player as a bold-name bullet with every stat on its own
+        short, deliberate line - see _trend_lines() for why."""
+        body_lines = stat_lines + [e(ln) for ln in _trend_lines(p)]
         if with_deadline:
-            block += f"\n   {e(_deadline_label(p))}"
-        return block
+            body_lines.append(e(_deadline_label(p)))
+        indented = "\n".join(f"   {ln}" for ln in body_lines)
+        return f"• <b>{e(_name(p))}</b>\n{indented}"
 
     if data.instant_sells or data.list_sells:
         lines.append("📉 <b>Sell advice</b>")
         for p in data.instant_sells:
             urgency = data.sell_scores.get(p["i"], 0)
-            lines.append(_entry(p, f"instant-sell ~💰{_compact(p.get('mv', 0))} (🎯{urgency}, 0 pts)"))
+            stats = [f"💰 instant-sell ~{_compact(p.get('mv', 0))} (0 pts)", f"🎯 urgency {urgency}"]
+            lines.append(_entry(p, stats))
         for p in data.list_sells:
             urgency = data.sell_scores.get(p["i"], 0)
-            lines.append(_entry(p, f"list at ~💰{_compact(p.get('mv', 0))} (🎯{urgency})"))
+            stats = [f"💰 list at ~{_compact(p.get('mv', 0))}", f"🎯 urgency {urgency}"]
+            lines.append(_entry(p, stats))
     else:
         lines.append("📉 <b>Sell advice</b> — nothing worth selling right now.")
     lines.append("")
@@ -350,17 +391,18 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
     if data.buys:
         buys_kb, buys_mgr = _split_by_seller(data.buys)
         if buys_kb:
-            lines.append("📈 <b>Buy advice — from Kickbase</b>")
+            lines.append("📈 <b>Buy advice — Kickbase</b> (affordable)")
             for p in buys_kb:
                 score = data.buy_scores.get(p["i"], 0)
-                lines.append(_entry(p, f"bid 💰{_compact(p.get('prc', 0))} (🎯{score})", with_deadline=True))
+                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}"]
+                lines.append(_entry(p, stats, with_deadline=True))
             lines.append("")
         if buys_mgr:
-            lines.append("🧑 <b>Buy advice — from other managers</b>")
+            lines.append("🧑 <b>Buy advice — other managers</b> (affordable)")
             for p in buys_mgr:
                 score = data.buy_scores.get(p["i"], 0)
-                headline = f"bid 💰{_compact(p.get('prc', 0))} from 👤{e(seller_name(p))} (🎯{score})"
-                lines.append(_entry(p, headline, with_deadline=True))
+                stats = [f"💰 bid {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"👤 {e(seller_name(p))}"]
+                lines.append(_entry(p, stats, with_deadline=True))
             lines.append("")
     else:
         lines.append("📈 <b>Buy advice</b> — nothing affordable stands out right now.")
@@ -369,25 +411,24 @@ def render_telegram(league_name: str, data: BriefingData) -> dict:
     if data.watchlist:
         watch_kb, watch_mgr = _split_by_seller(data.watchlist)
         if watch_kb:
-            lines.append("🔥 <b>Also rising — from Kickbase</b> (out of budget/room)")
+            lines.append("🔥 <b>Rising, unaffordable — Kickbase</b>")
             for p in watch_kb:
                 score = data.watch_scores.get(p["i"], 0)
-                headline = f"💰{_compact(p.get('prc', 0))} (🎯{score}, ⚽{p.get('ap', 0)} pts)"
-                lines.append(_entry(p, headline, with_deadline=True))
+                stats = [f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}", f"⚽ {p.get('ap', 0)} pts"]
+                lines.append(_entry(p, stats, with_deadline=True))
             lines.append("")
         if watch_mgr:
-            lines.append("🔥🧑 <b>Also rising — from other managers</b> (out of budget/room)")
+            lines.append("🔥🧑 <b>Rising, unaffordable — other managers</b>")
             for p in watch_mgr:
                 score = data.watch_scores.get(p["i"], 0)
-                headline = f"💰{_compact(p.get('prc', 0))} from 👤{e(seller_name(p))} (🎯{score}, ⚽{p.get('ap', 0)} pts)"
-                lines.append(_entry(p, headline, with_deadline=True))
+                stats = [
+                    f"💰 {_compact(p.get('prc', 0))}", f"🎯 score {score}",
+                    f"⚽ {p.get('ap', 0)} pts", f"👤 {e(seller_name(p))}",
+                ]
+                lines.append(_entry(p, stats, with_deadline=True))
             lines.append("")
 
-    lines.append(
-        "<i>Score = 0-100 relative ranking (7d trend × points), not a currency amount. "
-        "24h/7d = real observed value change. next-day est. = naive trend extrapolation, "
-        "not a forecast.</i>"
-    )
+    lines.extend(f"<i>{e(ln)}</i>" for ln in LEGEND_LINES)
     text = "\n".join(lines)
 
     button_players = (data.buys + data.list_sells + data.instant_sells)[:KEYBOARD_LIMIT]
