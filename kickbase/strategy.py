@@ -121,6 +121,17 @@ def sell_candidates(
     return instant_sell, list_for_market
 
 
+def is_notable_listing(player: dict) -> bool:
+    """Whether a market listing is worth a real-time new-listing alert:
+    rising in value, or already producing real points. Filters out the
+    falling/zero-point dead weight that makes up a chunk of raw computer
+    listings - the same "worthless" bar sell_candidates() uses to decide
+    what's not worth waiting on a market buyer for, applied here to what's
+    worth interrupting someone's phone for.
+    """
+    return player.get("mvt") == RISING or (player.get("ap") or 0) > 0
+
+
 def buy_candidates(
     market_items: list[dict],
     budget: float,

@@ -44,6 +44,10 @@ python -m kickbase.cli bot
 
 # read-only summary + advice across all leagues on the account, no execution
 python -m kickbase.cli brief
+
+# single poll: push a Telegram card for any newly-listed notable player
+# since the last run (what the GitHub Actions workflow uses, every 15 min)
+python -m kickbase.cli alert --telegram
 ```
 
 Credentials can be passed via `.env`/environment variables (`KICKBASE_EMAIL`,
@@ -60,15 +64,19 @@ reused between runs so scheduled runs don't hammer the login endpoint.
   (Settings → Secrets and variables → Actions → New repository secret on
   the repo) to actually run. All three also support manual
   `workflow_dispatch` for an on-demand run.
-  - `transfer-market.yml` — `watch --once`, every 15 minutes.
+  - `transfer-market.yml` — every 15 minutes: `watch --once` (logs
+    `[NEW]`/`[REMOVED]`/`[CHANGED]` to the Action's own output, see
+    below), then `alert --telegram` (see "Real-time alerts" below) on the
+    same run - no separate cron, so this costs nothing beyond what the
+    workflow was already spending.
   - `bot.yml` — `bot` (live, not `--dry-run`). **Schedule currently
     paused** (rolled back to advisory-only, see "The briefing" below) —
     only runs on manual trigger until the `schedule:` block is restored.
   - `brief.yml` — `brief --telegram`, at 6am/10am/2pm/6pm/8pm/midnight
     Europe/Berlin time (cron is UTC-fixed; the file has a comment on
-    adjusting for DST). This is the active one right now, and also needs
-    `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` as repository secrets (see
-    "The briefing" below) to actually push anywhere.
+    adjusting for DST). Also needs `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`
+    as repository secrets (see "The briefing" below) to actually push
+    anywhere.
 
   All three cache `~/.cache/kickbase` between runs.
 
@@ -78,6 +86,36 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 - `[NEW]` — a player was newly listed
 - `[REMOVED]` — a listing disappeared (sold, bought, or withdrawn)
 - `[CHANGED]` — a listing's price and/or bid count changed
+
+## Real-time alerts
+
+`alert` is what actually gets a new listing to your phone quickly, instead
+of waiting for the next scheduled `brief`. Kickbase's API has no
+webhook/push mechanism, so "real-time" here means "polled often enough
+that the delay is small" - every 15 minutes via the `transfer-market.yml`
+cron already described above, not a dedicated always-on server.
+
+Each run is a single poll that diffs the market against the previous
+run's snapshot (`~/.cache/kickbase/alert_seen_<leagueId>.json`, kept
+separate from `watch`'s own snapshot file so the two commands never reset
+each other's baseline) and sends one compact Telegram card - photo, price,
+avg points, value trend, deadline, and a Transfermarkt button - for each
+newly-appeared listing that's actually worth knowing about
+(`strategy.is_notable_listing()`: a rising trend, or real average points;
+this cuts out the falling/zero-point dead weight that's most of what the
+computer market churns through). Manager listings are skipped, same as
+`brief`. The very first run for a league only saves a baseline - nothing
+alerts until there's a previous snapshot to diff against, otherwise every
+listing already on the market would fire as "new" the moment this turns on.
+
+**Cost/latency tradeoff:** GitHub Actions bills by the minute per job
+regardless of how short the actual run is, so a 15-minute cron is ~96
+runs/day - comfortably inside the free tier's 2,000 min/month for a
+private repo alongside `brief.yml`'s much lighter schedule, but a much
+tighter cron (e.g. every 5 minutes) would burn through that budget fast.
+Given listings stay open for hours, not seconds, 15 minutes of latency
+captures nearly all the practical benefit; true sub-minute alerts would
+need an always-on polling process instead of a scheduled one.
 
 ## The briefing
 
@@ -260,6 +298,29 @@ find out only when a listing resolves, not who else is bidding or for how
 much), not a gap in this tool. So "Bids"/"Top Bid" in the `market` table
 mean "your own bid," not "how many people are bidding." `market --raw`
 prints the real JSON for your league if you want to double check.
+
+**`prc` never moves, even from your own bids.** Placed a bid at a
+listing's exact asking price, then a second bid 100k higher on the same
+listing: `prc` stayed at the original value through both, while `uop`
+(my own offer) updated correctly. So `prc` is a static, computer-set
+asking price, not a live "current top bid" - there is genuinely no
+visible signal anywhere of how much competition a listing has, at any
+point before it resolves. Practical takeaway: bidding right before a
+listing's deadline buys you nothing defensively (nobody can see or react
+to your bid regardless of timing) - the only thing timing affects is your
+own flexibility, since re-bidding replaces your existing offer in place
+(same `uoid` both times, not a second entry in `ofs`) rather than
+stacking, so a placeholder bid can be revised upward later at no cost.
+
+**Budget has a field the bot wasn't using.** `GET .../me/budget` returns
+`{"pbaa": ..., "pbas": ..., "b": ..., "bs": ...}`. `b`/`pbas` is your
+nominal balance and does not move when you place a bid; `pbaa` is exactly
+`b` minus your currently outstanding offer(s) - confirmed by placing a
+3.9m bid and watching `pbaa` drop by exactly that much while `b` stayed
+put. `strategy.buy_candidates()` currently reads only `b`, so with more
+than one simultaneous pending bid it could recommend spending money
+that's already committed elsewhere. Not yet fixed - worth switching to
+`pbaa` if/when multi-bid scenarios become common.
 
 **Seller identity.** Whether a listing is a real manager selling a player
 or a computer-generated market listing matters a lot for a buy decision,

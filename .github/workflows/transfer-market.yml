@@ -28,3 +28,15 @@ jobs:
           KICKBASE_PASSWORD: ${{ secrets.KICKBASE_PASSWORD }}
           KICKBASE_LEAGUE_ID: ${{ secrets.KICKBASE_LEAGUE_ID }}
         run: python -m kickbase.cli watch --once
+      # Same 15-minute cron this workflow already runs on - this just adds
+      # a second, notable-listings-only diff (see strategy.is_notable_listing)
+      # that actually pushes somewhere, instead of only logging to the
+      # Action's own output like the step above.
+      - name: Alert on notable new listings
+        env:
+          KICKBASE_EMAIL: ${{ secrets.KICKBASE_EMAIL }}
+          KICKBASE_PASSWORD: ${{ secrets.KICKBASE_PASSWORD }}
+          KICKBASE_LEAGUE_ID: ${{ secrets.KICKBASE_LEAGUE_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m kickbase.cli alert --telegram

@@ -144,6 +144,16 @@ def _state_path(league_id: str) -> Path:
     return STATE_DIR / f"market_{league_id}.json"
 
 
+def _alert_state_path(league_id: str) -> Path:
+    """Separate from watch's market_<leagueId>.json - watch is an
+    interactive/manual command and alert is meant for a scheduled cron, so
+    keeping their "last seen" snapshots apart means running one never
+    resets the other's baseline.
+    """
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    return STATE_DIR / f"alert_seen_{league_id}.json"
+
+
 def _diff_market(previous: dict[str, dict], current: dict[str, dict]) -> None:
     prev_ids, cur_ids = set(previous), set(current)
     for new_id in cur_ids - prev_ids:
@@ -195,6 +205,71 @@ def cmd_watch(args: argparse.Namespace) -> None:
         if args.once:
             break
         time.sleep(args.interval)
+
+
+def cmd_alert(args: argparse.Namespace) -> None:
+    """Single poll: diff the market against the last-seen snapshot (see
+    _alert_state_path) and push a Telegram card for any newly-appeared,
+    notable Kickbase listing (strategy.is_notable_listing - manager
+    listings are skipped, same as brief). Meant to run on a tight cron
+    (.github/workflows/alert.yml) rather than in a loop - state persists
+    on disk across runs (via GitHub Actions cache in CI), so only
+    listings that are actually new since the *previous* run get reported,
+    not the whole market every time.
+
+    The very first run for a league has no prior snapshot to diff
+    against, so it just saves a baseline and alerts on nothing - otherwise
+    every listing already on the market would fire as "new" the moment
+    this is turned on.
+    """
+    email, password = _load_credentials(args)
+    client = KickbaseClient(email, password)
+    client.login()
+
+    if args.all_leagues:
+        leagues = client.leagues
+    else:
+        league_id = _resolve_league_id(client, args)
+        leagues = [l for l in client.leagues if l.get("id") == league_id]
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if args.telegram and not (token and chat_id):
+        sys.exit("--telegram needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set.")
+
+    for league in leagues:
+        league_id = league["id"]
+        league_name = league.get("name", league_id)
+        state_file = _alert_state_path(league_id)
+        previous: dict[str, dict] = {}
+        if state_file.exists():
+            try:
+                previous = json.loads(state_file.read_text())
+            except json.JSONDecodeError:
+                previous = {}
+
+        market = client.get_market(league_id).get("it", [])
+        current = {_item_id(item): item for item in market}
+
+        if not previous:
+            print(f"[{league_name}] Baseline snapshot saved ({len(current)} listings) - no alerts on first run.")
+        else:
+            new_ids = set(current) - set(previous)
+            new_items = [current[i] for i in new_ids]
+            notable = [p for p in new_items if not p.get("u") and strategy.is_notable_listing(p)]
+            if not notable:
+                print(f"[{league_name}] No notable new listings this poll ({len(new_items)} new, filtered out).")
+            for player in notable[: args.max_alerts]:
+                _enrich_with_history(client, league_id, [player])
+                alert = report.render_new_listing_alert(player)
+                print(f"[{league_name}] ALERT: {_player_name(player)}")
+                if args.telegram:
+                    if alert["photo_url"]:
+                        telegram.send_photo(token, chat_id, alert["photo_url"], alert["caption"], alert["keyboard"])
+                    else:
+                        telegram.send_message(token, chat_id, alert["caption"], alert["keyboard"])
+
+        state_file.write_text(json.dumps(current))
 
 
 def _max_squad_size(client: KickbaseClient, league_id: str) -> int:
@@ -390,6 +465,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also push the briefing to Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
     )
     brief_parser.set_defaults(func=cmd_brief)
+
+    alert_parser = subparsers.add_parser(
+        "alert", help="Single poll: alert on newly-listed notable players (meant for a tight cron)"
+    )
+    alert_parser.add_argument(
+        "--all-leagues", action="store_true", help="Cover every league on the account instead of just one"
+    )
+    alert_parser.add_argument(
+        "--telegram", action="store_true",
+        help="Push new-listing alerts to Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
+    )
+    alert_parser.add_argument(
+        "--max-alerts", type=int, default=5, help="Cap alerts sent in a single run (default: 5)"
+    )
+    alert_parser.set_defaults(func=cmd_alert)
 
     return parser
 

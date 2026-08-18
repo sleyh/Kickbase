@@ -319,6 +319,31 @@ def render_text(league_name: str, data: BriefingData) -> str:
     return "\n".join(lines)
 
 
+def render_new_listing_alert(player: dict) -> dict:
+    """A standalone Telegram card for one market listing that just
+    appeared - fired independently of the periodic brief (see cli.py's
+    `alert` command), so it needs its own compact layout rather than
+    reusing render_telegram's full-digest one. Same visual language as
+    that digest's featured photo card: a photo, a short HTML caption, and
+    one Transfermarkt link button.
+
+    Returns {"photo_url": str|None, "caption": str, "keyboard": dict}.
+    """
+    e = html.escape
+    caption_lines = [
+        f"🆕 <b>New listing: {e(_name(player))}</b>",
+        e(_deadline_label(player)),
+        f"💰 bid {e(_compact(player.get('prc', 0)))}",
+        f"⚽ {player.get('ap', 0)} avg pts",
+    ]
+    caption_lines.extend(e(ln) for ln in _trend_lines(player))
+    return {
+        "photo_url": _player_photo_url(player),
+        "caption": "\n".join(caption_lines),
+        "keyboard": telegram.inline_keyboard([[(f"🔍 {_name(player)}", _transfermarkt_url(player))]]),
+    }
+
+
 def render_telegram(league_name: str, data: BriefingData) -> dict:
     """Rich Telegram content: a featured player photo (the strongest buy
     candidate, or a sell candidate if there's nothing to buy) with an HTML
