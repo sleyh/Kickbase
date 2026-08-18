@@ -271,25 +271,47 @@ that for competitors than it first looks - `kickbase/achievements.py`
 holds the *complete* achievement catalog (45 types, pulled live via
 `get_achievements()`/`get_achievement_detail()`, not guessed), and while
 achievement completion is user-scoped and unreadable for another manager
-directly, a meaningful chunk of it is publicly **inferable**: several
-achievements threshold against data anyone can see - league member count,
-a manager's own total transfer count, or their own current squad value.
-`achievements.infer_unlocked()` checks all of them:
+directly, a meaningful chunk of it is publicly **inferable**:
+`achievements.infer_unlocked()` checks every threshold it can verify from
+public per-manager data:
 
-| Achievement | Threshold | Reward |
-|---|---|---|
-| Kreisliga / Regionalliga / 2. Liga / 1. Liga | league has ≥3/6/12/18 managers | 1,000,000 each |
-| First deal / Transfer King bronze/silver/gold / F. Magath | ≥1/50/250/500/1000 career transfers | 100,000 - 2,000,000 |
-| Team value bronze/silver/gold/platinum / The Galactics | squad worth ≥125m/150m/200m/250m/350m | 100,000 - 2,000,000 |
+| Achievement | Threshold | Reward | Public source |
+|---|---|---|---|
+| Kreisliga / Regionalliga / 2. Liga / 1. Liga | league has ≥3/6/12/18 managers | 1,000,000 each | `ranking` member count |
+| First deal / Transfer King bronze/silver/gold / F. Magath | ≥1/50/250/500/1000 career transfers | 100,000 - 2,000,000 | `get_manager_transfers()` count |
+| Team value bronze/silver/gold/platinum / The Galactics | squad worth ≥125m/150m/200m/250m/350m | 100,000 - 2,000,000 | `get_manager_squad()` sum of `mv` |
+| Season points bronze/silver/gold/platinum / World cup winner | ≥1,000/5,000/15,000/30,000/40,000 season points | 100,000 - 2,000,000 | `get_manager_performance()`'s `tp` |
+| Match day winner (+ bronze/silver/gold) / The Special One | ≥1/3/5/10/25 matchday wins | 500,000 - 2,000,000 | `get_manager_performance()`'s `mdw` |
+| Match day points bronze/silver/gold / Match of the century | ≥500/1000/1500/2000 in one matchday | 100,000 - 2,000,000 | best `mdp` in `get_manager_performance()` |
+| The right touch / Bronze/Silver/Golden hand / Royal transfer | ≥1m/3m/5m/10m/25m profit, computer-market only | 100,000 - 2,000,000 | paired buy/sell `trp` in transfer log |
 
-Every other achievement (points, wins, per-player profit) needs live
-per-manager matchday data this API doesn't expose at all, win or lose, so
-those are never guessed at - `infer_unlocked()` only ever returns
-achievements it can actually verify, meaning it can undercount but never
-overcount. In this league (7 managers, everyone already transfer-active)
-that already means every competitor gets Kreisliga + Regionalliga + First
-deal for free (2,100,000 combined), plus Team value bronze (+100,000) for
-anyone already over 125m.
+**Correction:** an earlier version of this README (and `achievements.py`)
+claimed performance-based achievements were entirely uninferable because
+"no per-manager matchday data exists via this API." That was simply
+wrong - `get_manager_dashboard()`/`get_manager_performance()` are
+per-manager endpoints, not user-scoped, and this project was already
+calling them elsewhere before the claim was even written. The
+season-points/matchday-wins/matchday-points rows above come from them.
+
+One inference was built and then deliberately reverted after live
+testing exposed a real bug: squad items carry a per-player `"p"` field
+that looks like exactly what "score X points with a player" needs, but
+it's a leftover from the *previous real-world season* - confirmed by
+checking a squad on 2026-08-19, a week before this season's actual
+first match, and finding a player already showing `"p": 2789`. Using it
+directly overcounted "Top scorer"/"Football god"-tier achievements for
+nearly every manager immediately. Disabled (`infer=None`) until a
+properly season-scoped, ownership-scoped points source is found - see
+`achievements.py`'s module docstring for the full list of what's still
+excluded and why (MVP, Goal machine, Champion/Runner-up, Long bench, and
+this one).
+
+In this league (7 managers, everyone already transfer-active) the
+verified rules alone already mean every competitor gets Kreisliga +
+Regionalliga + First deal for free (2,100,000 combined), plus Team value
+bronze (+100,000) for anyone already over 125m - all season/matchday
+figures read zero for now since the 2026/27 season hasn't kicked off yet
+(first match 2026-08-28), not because they're hidden.
 
 `cli._track_achievements()` persists which inferred achievements each
 manager has crossed, per league, in
@@ -300,8 +322,9 @@ invisibly into that day's total, and a manager's own achievement history
 survives across runs.
 
 Even with this, competitors' figures are still a **lower bound**, not
-exact - performance-based achievements and daily-bonus collections remain
-completely invisible for them. The daily message labels every competitor
+exact - the achievements above with no inference rule and daily-bonus
+collections remain completely invisible for them. The daily message
+labels every competitor
 figure with `≈` and says so explicitly rather than presenting an estimate
 as fact.
 
@@ -585,6 +608,8 @@ deadline` note for manager ones, rather than leaving it blank.
 | Owned squad | `GET /v4/leagues/{leagueId}/squad` |
 | Another manager's squad | `GET /v4/leagues/{leagueId}/managers/{managerId}/squad` |
 | A manager's transfer history | `GET /v4/leagues/{leagueId}/managers/{managerId}/transfer` |
+| A manager's dashboard summary | `GET /v4/leagues/{leagueId}/managers/{managerId}/dashboard` |
+| A manager's season/matchday performance | `GET /v4/leagues/{leagueId}/managers/{managerId}/performance` |
 | League standings / member list (incl. join dates) | `GET /v4/leagues/{leagueId}/ranking` |
 | Your own achievement list | `GET /v4/leagues/{leagueId}/user/achievements` |
 | One achievement's detail (incl. reward paid) | `GET /v4/leagues/{leagueId}/user/achievements/{type}` |

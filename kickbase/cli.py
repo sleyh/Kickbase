@@ -459,6 +459,70 @@ def _track_achievements(
     return newly_unlocked
 
 
+def _max_computer_market_profit(log: list[dict]) -> int:
+    """Best profit on a single player bought AND sold entirely through
+    the computer market (no `othnm` on either leg) - matches the "hand"
+    achievement tier's "no transfers between managers" condition. Pairs
+    chronologically: each sell is matched against that player's most
+    recently-opened, not-yet-matched computer-market buy, so multiple
+    buy/sell cycles on the same player (confirmed to happen - see
+    Amoako's round trip in this project's own testing) don't cross-pair.
+    """
+    sorted_log = sorted(log, key=lambda t: t.get("dt", ""))
+    open_buys: dict[str, list[dict]] = {}
+    best_profit = 0
+    for t in sorted_log:
+        player_id = t.get("pi")
+        if t.get("tty") == 1 and not t.get("othnm"):
+            open_buys.setdefault(player_id, []).append(t)
+        elif t.get("tty") == 2 and not t.get("othnm"):
+            buys = open_buys.get(player_id)
+            if buys:
+                buy = buys.pop()
+                profit = t.get("trp", 0) - buy.get("trp", 0)
+                best_profit = max(best_profit, profit)
+    return best_profit
+
+
+def _collect_manager_stats(
+    client: KickbaseClient, league_id: str, manager_id: str, log: list[dict],
+    squad_items: list[dict], league_size: int,
+) -> achievements.ManagerStats:
+    """Bundles everything achievements.infer_unlocked() needs about one
+    manager, all from public per-manager endpoints. Season/matchday point
+    fields (get_manager_performance()) read 0 pre-season - see
+    achievements.py's module docstring for why that's not a bug.
+    """
+    season_points = matchday_wins = max_matchday_points = 0
+    try:
+        performance = client.get_manager_performance(league_id, manager_id).get("it", [])
+        current_season = performance[0] if performance else {}
+        season_points = current_season.get("tp", 0) or 0
+        matchday_wins = current_season.get("mdw", 0) or 0
+        matchday_points = [d.get("mdp") for d in current_season.get("it", []) if d.get("mdp") is not None]
+        max_matchday_points = max(matchday_points) if matchday_points else 0
+    except KickbaseError:
+        pass
+
+    # Computed but currently unused by any CATALOG entry - squad items'
+    # "p" is a leftover from the previous real-world season, not points
+    # scored this fantasy season under this manager, so it can't drive
+    # the "score X with a player" achievements yet. See achievements.py.
+    player_points = [p.get("p") for p in squad_items if p.get("p") is not None]
+    max_player_points = max(player_points) if player_points else 0
+
+    return achievements.ManagerStats(
+        league_size=league_size,
+        transfer_count=len(log),
+        squad_value=sum(p.get("mv", 0) or 0 for p in squad_items),
+        season_points=season_points,
+        matchday_wins=matchday_wins,
+        max_matchday_points=max_matchday_points,
+        max_player_points=max_player_points,
+        max_computer_market_profit=_max_computer_market_profit(log),
+    )
+
+
 def _estimate_manager_budget(
     client: KickbaseClient, league_id: str, manager_id: str, manager_name: str,
     join_dt: str, squad_items: list[dict], league_size: int,
@@ -468,18 +532,18 @@ def _estimate_manager_budget(
     _reference_day_for_join), minus everything they've ever bought, plus
     everything they've ever sold, plus every publicly-inferable
     achievement reward they've crossed the threshold for
-    (achievements.infer_unlocked() - league size, their own transfer
-    count, their own squad value; see _track_achievements() for the
-    persisted "when did they unlock this" record).
+    (achievements.infer_unlocked() over _collect_manager_stats(); see
+    _track_achievements() for the persisted "when did they unlock this"
+    record).
 
     This is exact for the logged-in account when *all* achievement
-    rewards (not just the inferable ones) and daily-bonus collections are
-    added on top (both otherwise user-scoped only, no equivalent for
-    another manager - see client.get_achievements()) - for a competitor
-    this is still only a lower bound, since performance-based
-    achievements (points, wins, per-player profit) can't be checked this
-    way and bonus collections are invisible entirely. squad_items is
-    whatever's already been fetched for this manager (get_squad() or
+    rewards (not just the publicly-inferable ones) and daily-bonus
+    collections are added on top (both otherwise user-scoped only, no
+    equivalent for another manager - see client.get_achievements()) -
+    for a competitor this is still only a lower bound, since a handful of
+    achievements have no inference rule at all (see achievements.py) and
+    bonus collections are invisible entirely. squad_items is whatever's
+    already been fetched for this manager (get_squad() or
     get_manager_squad(), already normalized) so this doesn't re-fetch it.
     """
     log = _all_manager_transfers(client, league_id, manager_id)
@@ -501,8 +565,8 @@ def _estimate_manager_budget(
     total_bought = sum(t.get("trp", 0) for t in log if t.get("tty") == 1)
     total_sold = sum(t.get("trp", 0) for t in log if t.get("tty") == 2)
 
-    squad_value = sum(p.get("mv", 0) or 0 for p in squad_items)
-    unlocked = achievements.infer_unlocked(league_size, len(log), squad_value)
+    stats = _collect_manager_stats(client, league_id, manager_id, log, squad_items, league_size)
+    unlocked = achievements.infer_unlocked(stats)
     achievement_reward = sum(a.reward for a in unlocked)
 
     newly_unlocked = _track_achievements(league_id, manager_id, manager_name, unlocked)

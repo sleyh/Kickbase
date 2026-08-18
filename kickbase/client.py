@@ -165,6 +165,29 @@ class KickbaseClient:
         """
         return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/squad")
 
+    def get_manager_dashboard(self, league_id: str, manager_id: str) -> dict:
+        """A manager's dashboard summary: {"tv" (team value), "prft"
+        (profit), "ap" (avg points), "mdw" (matchday wins), "pl" (points
+        last?), ...}. Per-manager, not user-scoped - confirmed queryable
+        for any manager id, same as get_manager_squad(). All points
+        fields read 0 pre-season (no matchdays played yet) - not because
+        the data is hidden, just because there's genuinely nothing there
+        yet.
+        """
+        return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/dashboard")
+
+    def get_manager_performance(self, league_id: str, manager_id: str) -> dict:
+        """A manager's season/matchday performance: {"it": [{"sid", "sn"
+        (season name), "tp" (total season points), "mdw" (matchday
+        wins), "it": [{"day", "mdp" (points that matchday), "tw" (won
+        that matchday), "md" (kickoff time), ...}]}]}. Per-manager, not
+        user-scoped. Same zero-until-matches-are-played caveat as
+        get_manager_dashboard() - this is what
+        achievements.infer_unlocked() reads for the season-points and
+        matchday-points/wins achievement tiers once real values exist.
+        """
+        return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/performance")
+
     def get_manager_transfers(self, league_id: str, manager_id: str, start: int = 0) -> dict:
         """A manager's transfer history: {"u", "unm", "it": [{"pi", "pn",
         "tid", "tty" (1=bought, 2=sold), "othnm" (the other party's name -
