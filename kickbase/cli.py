@@ -15,7 +15,7 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from . import predict, report, strategy, telegram
+from . import achievements, predict, report, strategy, telegram
 from .client import KickbaseClient, KickbaseError
 
 STATE_DIR = Path.home() / ".cache" / "kickbase"
@@ -421,22 +421,66 @@ def _all_manager_transfers(client: KickbaseClient, league_id: str, manager_id: s
     return entries
 
 
+def _achievement_state_path(league_id: str) -> Path:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    return STATE_DIR / f"achievements_seen_{league_id}.json"
+
+
+def _track_achievements(
+    league_id: str, manager_id: str, manager_name: str, unlocked: list[achievements.Achievement]
+) -> list[achievements.Achievement]:
+    """Persists which publicly-inferable achievements each manager has
+    crossed the threshold for, across runs (see achievements.infer_unlocked) -
+    so a newly-crossed one gets a real "first seen" date instead of just
+    silently feeding that day's budget total. Returns the ones newly
+    unlocked since the last run (always empty the very first time a
+    manager is tracked, since there's nothing yet to compare against).
+    """
+    state_file = _achievement_state_path(league_id)
+    state: dict = {}
+    if state_file.exists():
+        try:
+            state = json.loads(state_file.read_text())
+        except json.JSONDecodeError:
+            state = {}
+
+    manager_state = state.get(manager_id, {})
+    known_ids = set(manager_state.get("achievement_ids", []))
+    current_ids = {a.type_id for a in unlocked}
+    newly_unlocked = [a for a in unlocked if a.type_id not in known_ids]
+
+    first_seen = manager_state.get("first_seen", {})
+    now = datetime.now(timezone.utc).isoformat()
+    for a in newly_unlocked:
+        first_seen[str(a.type_id)] = now
+
+    state[manager_id] = {"name": manager_name, "achievement_ids": sorted(current_ids), "first_seen": first_seen}
+    state_file.write_text(json.dumps(state))
+    return newly_unlocked
+
+
 def _estimate_manager_budget(
-    client: KickbaseClient, league_id: str, manager_id: str, join_dt: str, squad_items: list[dict]
+    client: KickbaseClient, league_id: str, manager_id: str, manager_name: str,
+    join_dt: str, squad_items: list[dict], league_size: int,
 ) -> float:
     """Reconstructs a manager's current budget: Kickbase's fixed 150M
     starting budget, minus their starting-allocation squad's value (see
     _reference_day_for_join), minus everything they've ever bought, plus
-    everything they've ever sold.
+    everything they've ever sold, plus every publicly-inferable
+    achievement reward they've crossed the threshold for
+    (achievements.infer_unlocked() - league size, their own transfer
+    count, their own squad value; see _track_achievements() for the
+    persisted "when did they unlock this" record).
 
-    This is exact for the logged-in account when achievement rewards and
-    daily-bonus collections are added on top (both user-scoped only, no
-    equivalent for another manager - see client.get_achievements()) - for
-    a competitor this is necessarily a lower bound, since an engaged
-    manager's real budget could be 1-3M+ higher from those two untrackable
-    sources. squad_items is whatever's already been fetched for this
-    manager (get_squad() or get_manager_squad(), already normalized) so
-    this doesn't need to re-fetch it.
+    This is exact for the logged-in account when *all* achievement
+    rewards (not just the inferable ones) and daily-bonus collections are
+    added on top (both otherwise user-scoped only, no equivalent for
+    another manager - see client.get_achievements()) - for a competitor
+    this is still only a lower bound, since performance-based
+    achievements (points, wins, per-player profit) can't be checked this
+    way and bonus collections are invisible entirely. squad_items is
+    whatever's already been fetched for this manager (get_squad() or
+    get_manager_squad(), already normalized) so this doesn't re-fetch it.
     """
     log = _all_manager_transfers(client, league_id, manager_id)
     bought_ids_ever = {t["pi"] for t in log if t.get("tty") == 1}
@@ -456,7 +500,16 @@ def _estimate_manager_budget(
 
     total_bought = sum(t.get("trp", 0) for t in log if t.get("tty") == 1)
     total_sold = sum(t.get("trp", 0) for t in log if t.get("tty") == 2)
-    return 150_000_000 - starting_cost - total_bought + total_sold
+
+    squad_value = sum(p.get("mv", 0) or 0 for p in squad_items)
+    unlocked = achievements.infer_unlocked(league_size, len(log), squad_value)
+    achievement_reward = sum(a.reward for a in unlocked)
+
+    newly_unlocked = _track_achievements(league_id, manager_id, manager_name, unlocked)
+    for a in newly_unlocked:
+        print(f"  ACHIEVEMENT: {manager_name} newly unlocked '{a.name}' (+{a.reward:,})")
+
+    return 150_000_000 - starting_cost - total_bought + total_sold + achievement_reward
 
 
 def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | None:
@@ -473,15 +526,17 @@ def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | N
         print(f"Warning: couldn't fetch league ranking for competitors: {exc}", file=sys.stderr)
         return None
 
+    league_size = len(ranking.get("us", []))
     competitors = []
     for manager in ranking.get("us", []):
         manager_id = manager.get("i")
+        manager_name = manager.get("n", "?")
         if not manager_id or manager_id == client.user_id:
             continue
         try:
             squad = client.get_manager_squad(league_id, manager_id).get("it", [])
         except KickbaseError as exc:
-            print(f"Warning: couldn't fetch squad for {manager.get('n', manager_id)}: {exc}", file=sys.stderr)
+            print(f"Warning: couldn't fetch squad for {manager_name}: {exc}", file=sys.stderr)
             continue
         _normalize_manager_squad_items(squad)
         _enrich_with_history(client, league_id, squad)
@@ -493,12 +548,14 @@ def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | N
         join_dt = manager.get("jd")
         if join_dt:
             try:
-                estimated_budget = _estimate_manager_budget(client, league_id, manager_id, join_dt, squad)
+                estimated_budget = _estimate_manager_budget(
+                    client, league_id, manager_id, manager_name, join_dt, squad, league_size
+                )
             except KickbaseError as exc:
-                print(f"Warning: couldn't estimate budget for {manager.get('n', manager_id)}: {exc}", file=sys.stderr)
+                print(f"Warning: couldn't estimate budget for {manager_name}: {exc}", file=sys.stderr)
 
         competitors.append({
-            "name": manager.get("n", "?"),
+            "name": manager_name,
             "total_value": total_value,
             "total_delta": total_delta,
             "estimated_budget": estimated_budget,

@@ -245,13 +245,44 @@ This was found the hard way, in order:
    zero.
 
 Net result: **exact** for the logged-in account (achievement rewards +
-bonus collections addable on top of the base formula), but only a
-**lower-bound estimate** for competitors, since those same two income
-sources are invisible for them - `cli._estimate_manager_budget()` omits
-them entirely rather than guessing. An engaged competitor's real budget
-could plausibly run 1-3M+ higher than what's shown. The daily message
-labels every competitor figure with `≈` and says so explicitly rather
-than presenting a guess as fact.
+bonus collections addable on top of the base formula), and closer than
+that for competitors than it first looks - `kickbase/achievements.py`
+holds the *complete* achievement catalog (45 types, pulled live via
+`get_achievements()`/`get_achievement_detail()`, not guessed), and while
+achievement completion is user-scoped and unreadable for another manager
+directly, a meaningful chunk of it is publicly **inferable**: several
+achievements threshold against data anyone can see - league member count,
+a manager's own total transfer count, or their own current squad value.
+`achievements.infer_unlocked()` checks all of them:
+
+| Achievement | Threshold | Reward |
+|---|---|---|
+| Kreisliga / Regionalliga / 2. Liga / 1. Liga | league has ≥3/6/12/18 managers | 1,000,000 each |
+| First deal / Transfer King bronze/silver/gold / F. Magath | ≥1/50/250/500/1000 career transfers | 100,000 - 2,000,000 |
+| Team value bronze/silver/gold/platinum / The Galactics | squad worth ≥125m/150m/200m/250m/350m | 100,000 - 2,000,000 |
+
+Every other achievement (points, wins, per-player profit) needs live
+per-manager matchday data this API doesn't expose at all, win or lose, so
+those are never guessed at - `infer_unlocked()` only ever returns
+achievements it can actually verify, meaning it can undercount but never
+overcount. In this league (7 managers, everyone already transfer-active)
+that already means every competitor gets Kreisliga + Regionalliga + First
+deal for free (2,100,000 combined), plus Team value bronze (+100,000) for
+anyone already over 125m.
+
+`cli._track_achievements()` persists which inferred achievements each
+manager has crossed, per league, in
+`~/.cache/kickbase/achievements_seen_<leagueId>.json` - not because the
+computation is expensive to redo (it isn't), but so a newly-crossed
+threshold gets a real "first seen" timestamp instead of blending
+invisibly into that day's total, and a manager's own achievement history
+survives across runs.
+
+Even with this, competitors' figures are still a **lower bound**, not
+exact - performance-based achievements and daily-bonus collections remain
+completely invisible for them. The daily message labels every competitor
+figure with `≈` and says so explicitly rather than presenting an estimate
+as fact.
 
 ## Transfer spending analysis
 
