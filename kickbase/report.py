@@ -378,10 +378,7 @@ def render_squad_value_update(league_name: str, squad: list[dict], budget: float
     with_delta.sort(key=lambda p: p.get("d1", 0), reverse=True)
     for p in with_delta:
         d1 = p.get("d1", 0)
-        # 🔺/🔻 render as the same red triangle on most platforms, which
-        # defeats the point of a color cue - pairing a colored circle with
-        # the arrow guarantees green-up/red-down regardless of client.
-        icon = "🟢⬆️" if d1 > 0 else "🔴⬇️" if d1 < 0 else "⚪➖"
+        icon = "🟢" if d1 > 0 else "🔴" if d1 < 0 else "⚪"
         lines.append(f"{icon} <b>{e(_name(p))}</b>  {e(_signed(d1))}")
     if without_delta:
         lines.append("")
