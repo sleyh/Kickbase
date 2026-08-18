@@ -69,10 +69,10 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 
 - **cron**: `*/5 * * * * cd /path/to/repo && .venv/bin/python -m kickbase.cli watch --once >> market.log 2>&1`
 - **systemd timer**: run `watch --once` as a `oneshot` service triggered by a `.timer` unit.
-- **GitHub Actions**: four workflows, all needing `KICKBASE_EMAIL`,
+- **GitHub Actions**: five workflows, all needing `KICKBASE_EMAIL`,
   `KICKBASE_PASSWORD`, and `KICKBASE_LEAGUE_ID` as repository secrets
   (Settings → Secrets and variables → Actions → New repository secret on
-  the repo) to actually run. All four also support manual
+  the repo) to actually run. All five also support manual
   `workflow_dispatch` for an on-demand run.
   - `transfer-market.yml` — every 15 minutes: `watch --once` (logs
     `[NEW]`/`[REMOVED]`/`[CHANGED]` to the Action's own output, see
@@ -85,14 +85,17 @@ reused between runs so scheduled runs don't hammer the login endpoint.
   - `brief.yml` — `brief --telegram`, at 6am/10am/2pm/6pm/8pm/midnight
     Europe/Berlin time (cron is UTC-fixed; the file has a comment on
     adjusting for DST).
+  - `transfer-analysis.yml` — `transfer-analysis --telegram`, once daily
+    at 8pm Europe/Berlin (see "Transfer spending analysis" below) -
+    deliberately before `squad-value.yml`'s run, same day.
   - `squad-value.yml` — `squad-value --telegram`, once daily at 10pm
     Europe/Berlin (see "Daily squad value update" below).
 
-  `brief.yml` and `squad-value.yml` also need
+  `brief.yml`, `transfer-analysis.yml`, and `squad-value.yml` also need
   `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` as repository secrets to
   actually push anywhere.
 
-  All four cache `~/.cache/kickbase` between runs.
+  All five cache `~/.cache/kickbase` between runs.
 
 `watch` persists the last-seen market snapshot to
 `~/.cache/kickbase/market_<leagueId>.json` and on each poll reports:
@@ -196,8 +199,10 @@ a once-a-day cron; `--no-competitors` skips it if that's ever a problem.
 ## Transfer spending analysis
 
 `transfer-analysis` answers "who overpays and who pays close to asking
-price" - on-demand only, no scheduled workflow calls it, since it's an
-investigative tool rather than a daily digest.
+price." Runs daily at 8pm Europe/Berlin (`transfer-analysis.yml`) -
+deliberately *before* `squad-value.yml`'s ~10pm run, so the "premium vs.
+current market value" comparison reflects the day's transfers against
+values from before that day's recalculation shifts them.
 
 The sealed-bid design (see below) hides competing bids completely while a
 listing is open - nobody, including this tool, can see what anyone else

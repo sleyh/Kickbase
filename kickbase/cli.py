@@ -466,14 +466,19 @@ def _build_spending_profiles(client: KickbaseClient, league_id: str) -> list[dic
 
 
 def cmd_transfer_analysis(args: argparse.Namespace) -> None:
-    """On-demand only (no scheduled workflow calls this): for every
-    league member, compares what they actually paid for each player
-    against that player's current market value, to see who pays close to
-    asking price on computer listings vs who tends to overspend, plus
-    every manager-to-manager trade's premium. This is the only way to see
-    anything about competing bids at all - Kickbase's sealed-bid design
-    (see README) hides them completely while a listing is open; this only
-    works retroactively, once a transfer has already completed.
+    """For every league member, compares what they actually paid for each
+    player against that player's current market value, to see who pays
+    close to asking price on computer listings vs who tends to overspend,
+    plus every manager-to-manager trade's premium. This is the only way
+    to see anything about competing bids at all - Kickbase's sealed-bid
+    design (see README) hides them completely while a listing is open;
+    this only works retroactively, once a transfer has already completed.
+
+    Runs daily at 8pm Europe/Berlin via
+    .github/workflows/transfer-analysis.yml - before the ~10pm daily
+    value recalculation squad-value.yml waits for, so this reflects the
+    day's transfers against values that haven't just shifted underneath
+    them.
     """
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
