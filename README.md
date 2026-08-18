@@ -196,6 +196,63 @@ call per competitor player (~10-13 players × 6 competitors here), so this
 adds real runtime to the daily job (~15s total) but nothing outsized for
 a once-a-day cron; `--no-competitors` skips it if that's ever a problem.
 
+**Competitor budget reconstruction.** `budget` (cash on hand) is private
+per-account, same as bids - there is no endpoint that returns it for
+another manager. But it can be *derived* from entirely public data, and
+this was validated to the exact dollar against a real, known budget
+before being trusted for anyone else:
+
+```
+150,000,000                                    (Kickbase's fixed starting budget)
+− starting-allocation squad value              (see reference-day note below)
+− everything ever bought (client.get_manager_transfers(), tty=1)
++ everything ever sold (tty=2)
+= reconstructed budget
+```
+
+A manager's "starting allocation" is whichever currently-or-formerly-held
+players never appear as a `tty=1` buy in their transfer log - they were
+granted for free when they joined, not purchased. Their cost basis is
+that player's market value from `get_market_value_history()` on a
+specific **reference day**, not "whenever they joined" naively: the
+day *before* they joined if they joined before the daily value update
+fires (empirically ~18:00-20:00 UTC - `cli.UPDATE_CUTOFF_HOUR_UTC`),
+since that day's own update hadn't landed yet at join time and their
+squad was priced off the previous day's close. Get this reference day
+wrong and the reconstruction is off by a consistent, non-obvious amount
+that looks like a bug rather than a wrong date.
+
+This was found the hard way, in order:
+1. Assumed the league's creation date applied to everyone - wrong for a
+   manager who joined 2 days later (confirmed via `ranking`'s `jd` field
+   per manager).
+2. Even with the correct join date, still off by ~2.1m - traced to two
+   private income sources with no competitor-facing equivalent:
+   **achievement rewards** (`client.get_achievement_detail()`'s `er`
+   field - some achievements pay real budget, e.g. 1,000,000 for a
+   league reaching 6 managers; others with a nonzero `er` are cosmetic
+   and never actually credited, confirmed by cross-checking against
+   which ones the user could actually see paid out in the app) and
+   **daily login bonuses** (`GET /v4/bonus/collect` - literally
+   collects the bonus as a side effect of calling it, not just checking;
+   `client.get_activities_feed()`'s `t:22` events give the full
+   collection history). Both are strictly user-scoped - confirmed no
+   `/managers/{managerId}/achievements` equivalent exists, and a full
+   league activity feed scan found zero bonus-collection events from any
+   of 6 other managers, only ever the caller's own.
+3. Even with those two added, still off by ~17k - the reference-day
+   fix above (previous day's close, not join day) closed that to exactly
+   zero.
+
+Net result: **exact** for the logged-in account (achievement rewards +
+bonus collections addable on top of the base formula), but only a
+**lower-bound estimate** for competitors, since those same two income
+sources are invisible for them - `cli._estimate_manager_budget()` omits
+them entirely rather than guessing. An engaged competitor's real budget
+could plausibly run 1-3M+ higher than what's shown. The daily message
+labels every competitor figure with `≈` and says so explicitly rather
+than presenting a guess as fact.
+
 ## Transfer spending analysis
 
 `transfer-analysis` answers "who overpays and who pays close to asking
@@ -476,7 +533,11 @@ deadline` note for manager ones, rather than leaving it blank.
 | Owned squad | `GET /v4/leagues/{leagueId}/squad` |
 | Another manager's squad | `GET /v4/leagues/{leagueId}/managers/{managerId}/squad` |
 | A manager's transfer history | `GET /v4/leagues/{leagueId}/managers/{managerId}/transfer` |
-| League standings / member list | `GET /v4/leagues/{leagueId}/ranking` |
+| League standings / member list (incl. join dates) | `GET /v4/leagues/{leagueId}/ranking` |
+| Your own achievement list | `GET /v4/leagues/{leagueId}/user/achievements` |
+| One achievement's detail (incl. reward paid) | `GET /v4/leagues/{leagueId}/user/achievements/{type}` |
+| League activity feed (transfers, bonuses, milestones) | `GET /v4/leagues/{leagueId}/activitiesFeed` |
+| Collect your daily bonus | `GET /v4/bonus/collect` |
 | Budget | `GET /v4/leagues/{leagueId}/me/budget` |
 | Get/set lineup | `GET`/`POST /v4/leagues/{leagueId}/lineup` |
 | List a player for sale | `POST /v4/leagues/{leagueId}/market` |

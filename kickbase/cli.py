@@ -12,7 +12,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import predict, report, strategy, telegram
@@ -386,13 +386,86 @@ def _normalize_manager_squad_items(items: list[dict]) -> list[dict]:
     return items
 
 
+UPDATE_CUTOFF_HOUR_UTC = 18  # the daily market-value update empirically fires ~18:00-20:00 UTC
+
+
+def _reference_day_for_join(join_dt: str) -> int:
+    """Epoch day index (matching market-value-history's "dt") to value a
+    manager's starting-allocation squad at: the day *before* they joined
+    if they joined before the daily value update fires that day (their
+    squad was priced using the previous day's close, since that day's own
+    update hadn't landed yet), otherwise the join day itself. Validated to
+    the exact budget dollar against a real account that joined at 11:53
+    UTC - see README's budget-reconstruction section for the full
+    derivation.
+    """
+    dt = datetime.fromisoformat(join_dt.replace("Z", "+00:00"))
+    day_index = (dt.date() - date(1970, 1, 1)).days
+    return day_index - 1 if dt.hour < UPDATE_CUTOFF_HOUR_UTC else day_index
+
+
+def _all_manager_transfers(client: KickbaseClient, league_id: str, manager_id: str) -> list[dict]:
+    """Every transfer for a manager, walking get_manager_transfers()'s
+    pagination fully rather than trusting a single page - important here
+    since a truncated buy/sell total would silently corrupt the budget
+    reconstruction below.
+    """
+    entries: list[dict] = []
+    start = 0
+    while True:
+        batch = client.get_manager_transfers(league_id, manager_id, start=start).get("it", [])
+        if not batch:
+            break
+        entries.extend(batch)
+        start += len(batch)
+    return entries
+
+
+def _estimate_manager_budget(
+    client: KickbaseClient, league_id: str, manager_id: str, join_dt: str, squad_items: list[dict]
+) -> float:
+    """Reconstructs a manager's current budget: Kickbase's fixed 150M
+    starting budget, minus their starting-allocation squad's value (see
+    _reference_day_for_join), minus everything they've ever bought, plus
+    everything they've ever sold.
+
+    This is exact for the logged-in account when achievement rewards and
+    daily-bonus collections are added on top (both user-scoped only, no
+    equivalent for another manager - see client.get_achievements()) - for
+    a competitor this is necessarily a lower bound, since an engaged
+    manager's real budget could be 1-3M+ higher from those two untrackable
+    sources. squad_items is whatever's already been fetched for this
+    manager (get_squad() or get_manager_squad(), already normalized) so
+    this doesn't need to re-fetch it.
+    """
+    log = _all_manager_transfers(client, league_id, manager_id)
+    bought_ids_ever = {t["pi"] for t in log if t.get("tty") == 1}
+    current_ids = {p.get("i") for p in squad_items}
+    sold_ids = {t["pi"] for t in log if t.get("tty") == 2}
+    starting_ids = (current_ids | sold_ids) - bought_ids_ever
+
+    reference_day = _reference_day_for_join(join_dt)
+    starting_cost = 0.0
+    for player_id in starting_ids:
+        try:
+            history = client.get_market_value_history(league_id, player_id)
+        except KickbaseError:
+            continue
+        mv = next((e.get("mv") for e in history.get("it", []) if e.get("dt") == reference_day), None)
+        starting_cost += mv or 0
+
+    total_bought = sum(t.get("trp", 0) for t in log if t.get("tty") == 1)
+    total_sold = sum(t.get("trp", 0) for t in log if t.get("tty") == 2)
+    return 150_000_000 - starting_cost - total_bought + total_sold
+
+
 def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | None:
-    """Every other league member's squad value + today's gain/loss, for
-    the daily squad-value update's "Competitors" section. Returns None
-    (rather than a partial/misleading list) if the ranking call itself
-    fails - a single competitor's squad failing to load just drops that
-    one manager instead, since one member's odd data shouldn't hide
-    everyone else's.
+    """Every other league member's squad value, today's gain/loss, and
+    estimated budget (+ combined total), for the daily squad-value
+    update's "Competitors" section. Returns None (rather than a
+    partial/misleading list) if the ranking call itself fails - a single
+    competitor's squad failing to load just drops that one manager
+    instead, since one member's odd data shouldn't hide everyone else's.
     """
     try:
         ranking = client.get_ranking(league_id)
@@ -415,7 +488,21 @@ def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | N
         total_value = sum(p.get("mv", 0) or 0 for p in squad)
         deltas = [p.get("d1") for p in squad if p.get("d1") is not None]
         total_delta = sum(deltas) if deltas else None
-        competitors.append({"name": manager.get("n", "?"), "total_value": total_value, "total_delta": total_delta})
+
+        estimated_budget = None
+        join_dt = manager.get("jd")
+        if join_dt:
+            try:
+                estimated_budget = _estimate_manager_budget(client, league_id, manager_id, join_dt, squad)
+            except KickbaseError as exc:
+                print(f"Warning: couldn't estimate budget for {manager.get('n', manager_id)}: {exc}", file=sys.stderr)
+
+        competitors.append({
+            "name": manager.get("n", "?"),
+            "total_value": total_value,
+            "total_delta": total_delta,
+            "estimated_budget": estimated_budget,
+        })
     return competitors
 
 

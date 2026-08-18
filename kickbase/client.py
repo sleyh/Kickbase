@@ -135,12 +135,17 @@ class KickbaseClient:
         return self._get(f"/v4/leagues/{league_id}/me/budget")
 
     def get_ranking(self, league_id: str) -> dict:
-        """League standings: {"us": [{"i": user id, "n": name, ...}, ...]}
-        - one entry per manager including yourself. The doc-listed field
-        that looks like team value (`tv`) reads 0.0 for everyone in
-        practice (confirmed live, including on my own squad which is
-        worth tens of millions) - not a usable market-value source, just
-        the manager list itself.
+        """League standings: {"us": [{"i": user id, "n": name, "jd": join
+        date, ...}, ...]} - one entry per manager including yourself. The
+        doc-listed field that looks like team value (`tv`) reads 0.0 for
+        everyone in practice (confirmed live, including on my own squad
+        which is worth tens of millions) - not a usable market-value
+        source. `jd` (join date) matters for budget reconstruction - see
+        cli._estimate_manager_budget() - a manager's starting-allocation
+        squad is valued as of the day *before* they joined if they joined
+        before the daily value update fires (confirmed empirically:
+        ~18:00-20:00 UTC), since that day's own update hadn't landed yet
+        at join time.
         """
         return self._get(f"/v4/leagues/{league_id}/ranking")
 
@@ -160,11 +165,14 @@ class KickbaseClient:
         """
         return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/squad")
 
-    def get_manager_transfers(self, league_id: str, manager_id: str) -> dict:
+    def get_manager_transfers(self, league_id: str, manager_id: str, start: int = 0) -> dict:
         """A manager's transfer history: {"u", "unm", "it": [{"pi", "pn",
         "tid", "tty" (1=bought, 2=sold), "othnm" (the other party's name -
         only present when it was a real manager, not Kickbase itself),
-        "trp" (price paid/received), "dt", "pim"}]}.
+        "trp" (price paid/received), "dt", "pim"}]}. Paginated (`start`
+        offset) - see cli._all_manager_transfers() for a helper that
+        walks every page, since trusting a single page could silently
+        truncate an active manager's history.
 
         Confirmed live: a manager-to-manager trade shows up as a mirrored
         pair across both parties' own logs - identical player, price, and
@@ -173,7 +181,40 @@ class KickbaseClient:
         sealed bids retroactively visible once a listing resolves - see
         README's "Transfer spending analysis" section.
         """
-        return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/transfer")
+        return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/transfer?start={start}")
+
+    def get_achievements(self, league_id: str) -> dict:
+        """Your own achievement list: {"it": [{"t" (type id), "n", "d",
+        "ac" (1 if achieved), ...}]}. Only ac=1 entries have a real cash
+        payout - fetch get_achievement_detail() per type for the "er"
+        (earned reward) field. User-scoped only, same as get_budget() -
+        there's no /managers/{managerId}/achievements, so this can't be
+        read for another manager (confirmed: no such path in the API
+        doc's OpenAPI spec).
+        """
+        return self._get(f"/v4/leagues/{league_id}/user/achievements")
+
+    def get_achievement_detail(self, league_id: str, achievement_type: int) -> dict:
+        """One achievement's full detail, including "er" (earned reward -
+        cash actually credited to budget, only meaningful if "ac": 1).
+        Confirmed live: some achieved achievements carry an "er" value
+        that clearly wasn't credited (e.g. cosmetic ones) - cross-check
+        against a known-real budget before trusting "er" blindly, see
+        README's budget-reconstruction section.
+        """
+        return self._get(f"/v4/leagues/{league_id}/user/achievements/{achievement_type}")
+
+    def get_activities_feed(self, league_id: str, start: int = 0, max_items: int = 100) -> dict:
+        """Paginated league activity feed: {"af": [{"t": type code, "data":
+        {...}, "dt", ...}]}. Mixes public events (transfers - type 15,
+        new listings - type 3, milestones - type 26) with private ones
+        that only ever show your own (bonus collections - type 22,
+        confirmed by scanning an entire league's feed and finding zero
+        type-22 entries from any of 6 other managers). type 23 is the
+        league-creation event itself, carrying the league's starting
+        budget setting.
+        """
+        return self._get(f"/v4/leagues/{league_id}/activitiesFeed?start={start}&max={max_items}")
 
     def get_lineup(self, league_id: str) -> dict:
         return self._get(f"/v4/leagues/{league_id}/lineup")

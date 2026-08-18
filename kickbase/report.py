@@ -411,7 +411,16 @@ def render_squad_value_update(
             else:
                 icon = "🟢" if delta > 0 else "🔴" if delta < 0 else "⚪"
                 delta_str = e(_signed(delta))
-            lines.append(f"{icon} <b>{e(comp['name'])}</b>  {e(_compact(comp['total_value']))}  ({delta_str})")
+            lines.append(f"{icon} <b>{e(comp['name'])}</b>")
+            lines.append(f"   👥 squad {e(_compact(comp['total_value']))} ({delta_str})")
+            budget = comp.get("estimated_budget")
+            if budget is not None:
+                total = budget + comp["total_value"]
+                lines.append(f"   💰 budget ≈{e(_compact(budget))}")
+                lines.append(f"   🏦 total ≈{e(_compact(total))}")
+        lines.append("")
+        lines.append("<i>ℹ️ ≈ = reconstructed estimate, not their real number</i>")
+        lines.append("<i>(likely a lower bound - private bonuses/rewards aren't counted)</i>")
 
     return "\n".join(lines)
 
