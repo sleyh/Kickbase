@@ -489,6 +489,17 @@ def render_spending_analysis(league_name: str, profiles: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def render_bonus_collected(league_name: str, amount: float, streak_day: int) -> str:
+    """A one-line Telegram message for cli.py's `collect-bonus` command -
+    only ever sent when something was actually collected (see
+    client.collect_bonus() - an empty response means nothing was
+    available, and cmd_collect_bonus skips Telegram entirely in that
+    case rather than reporting a zero).
+    """
+    e = html.escape
+    return f"💰 <b>Daily bonus collected</b> — {e(league_name)}\n{e(_compact(amount))} (day {streak_day} streak)"
+
+
 _BID_STATUS_ICONS = {"placed": "📤", "updated": "🔄", "won": "✅", "lost": "❌"}
 _BID_STATUS_LABELS = {"placed": "Bid placed", "updated": "Bid updated", "won": "Bid won", "lost": "Bid lost"}
 

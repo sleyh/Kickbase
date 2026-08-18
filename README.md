@@ -58,6 +58,9 @@ python -m kickbase.cli squad-value --telegram --no-competitors
 
 # on-demand: who pays close to asking price vs who overspends, per league member
 python -m kickbase.cli transfer-analysis
+
+# collect today's daily login bonus, if one's available
+python -m kickbase.cli collect-bonus --telegram
 ```
 
 Credentials can be passed via `.env`/environment variables (`KICKBASE_EMAIL`,
@@ -69,10 +72,10 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 
 - **cron**: `*/5 * * * * cd /path/to/repo && .venv/bin/python -m kickbase.cli watch --once >> market.log 2>&1`
 - **systemd timer**: run `watch --once` as a `oneshot` service triggered by a `.timer` unit.
-- **GitHub Actions**: five workflows, all needing `KICKBASE_EMAIL`,
+- **GitHub Actions**: six workflows, all needing `KICKBASE_EMAIL`,
   `KICKBASE_PASSWORD`, and `KICKBASE_LEAGUE_ID` as repository secrets
   (Settings → Secrets and variables → Actions → New repository secret on
-  the repo) to actually run. All five also support manual
+  the repo) to actually run. All six also support manual
   `workflow_dispatch` for an on-demand run.
   - `transfer-market.yml` — every 15 minutes: `watch --once` (logs
     `[NEW]`/`[REMOVED]`/`[CHANGED]` to the Action's own output, see
@@ -82,6 +85,9 @@ reused between runs so scheduled runs don't hammer the login endpoint.
   - `bot.yml` — `bot` (live, not `--dry-run`). **Schedule currently
     paused** (rolled back to advisory-only, see "The briefing" below) —
     only runs on manual trigger until the `schedule:` block is restored.
+  - `collect-bonus.yml` — `collect-bonus --telegram`, once daily at 1am
+    Europe/Berlin (see "Daily bonus collection" below) - early, so
+    there's a fresh streak day by the time anything else runs.
   - `brief.yml` — `brief --telegram`, at 6am/10am/2pm/6pm/8pm/midnight
     Europe/Berlin time (cron is UTC-fixed; the file has a comment on
     adjusting for DST).
@@ -91,11 +97,11 @@ reused between runs so scheduled runs don't hammer the login endpoint.
   - `squad-value.yml` — `squad-value --telegram`, once daily at 10pm
     Europe/Berlin (see "Daily squad value update" below).
 
-  `brief.yml`, `transfer-analysis.yml`, and `squad-value.yml` also need
-  `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` as repository secrets to
-  actually push anywhere.
+  `collect-bonus.yml`, `brief.yml`, `transfer-analysis.yml`, and
+  `squad-value.yml` also need `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` as
+  repository secrets to actually push anywhere.
 
-  All five cache `~/.cache/kickbase` between runs.
+  All six cache `~/.cache/kickbase` between runs.
 
 `watch` persists the last-seen market snapshot to
 `~/.cache/kickbase/market_<leagueId>.json` and on each poll reports:
@@ -155,6 +161,21 @@ a real in-app bid on Vitalie Becker showed up as a "placed" alert with no
 CLI involvement in placing it. Like the new-listing alert, the first-ever
 run only baselines (no alerts) so pre-existing bids at feature-launch
 don't all fire as "new."
+
+## Daily bonus collection
+
+`collect-bonus` claims the daily login bonus (`client.collect_bonus()` -
+`GET /v4/bonus/collect`, which actually collects as a side effect of
+calling it, not just checks whether one's available) and pushes a
+Telegram message with the amount, once a day at 1am Europe/Berlin
+(`collect-bonus.yml`) - early relative to the other jobs so a fresh
+streak day is already banked before anything else runs. Only sends a
+message when something was actually collected; an already-claimed day
+(confirmed live: returns an empty list, no error) stays quiet instead of
+reporting a "collected 0" every run. Not league-scoped server-side - one
+call covers every league on the account - but the command still reports
+only for the resolved league by default (`--all-leagues` for everything),
+matching every other command's default scope.
 
 ## Daily squad value update
 

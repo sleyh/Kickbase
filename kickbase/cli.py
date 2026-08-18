@@ -651,6 +651,47 @@ def cmd_transfer_analysis(args: argparse.Namespace) -> None:
             print("(sent to Telegram)")
 
 
+def cmd_collect_bonus(args: argparse.Namespace) -> None:
+    """Collects today's daily login bonus (client.collect_bonus() - a
+    single call that covers every league on the account, not just the
+    resolved one) and reports the amount for whichever league(s) this
+    run is scoped to. Meant to run once a day (see
+    .github/workflows/collect-bonus.yml) - only pushes to Telegram when
+    something was actually collected, so an already-claimed day stays
+    quiet instead of sending a "collected 0" message every run.
+    """
+    email, password = _load_credentials(args)
+    client = KickbaseClient(email, password)
+    client.login()
+
+    if args.all_leagues:
+        leagues = client.leagues
+    else:
+        league_id = _resolve_league_id(client, args)
+        leagues = [l for l in client.leagues if l.get("id") == league_id]
+    target_ids = {league["id"] for league in leagues}
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if args.telegram and not (token and chat_id):
+        sys.exit("--telegram needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set.")
+
+    result = client.collect_bonus()
+    entries = [e for e in result.get("it", []) if e.get("li") in target_ids]
+
+    if not entries:
+        print("No bonus available to collect right now (already claimed today, or none yet).")
+        return
+
+    for entry in entries:
+        text = report.render_bonus_collected(entry.get("lnm", "?"), entry.get("v", 0), entry.get("day", 0))
+        print(text)
+        if args.telegram:
+            telegram.send_message(token, chat_id, text)
+    if args.telegram:
+        print("(sent to Telegram)")
+
+
 def cmd_bot(args: argparse.Namespace) -> None:
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
@@ -902,6 +943,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Push the analysis to Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
     )
     transfer_analysis_parser.set_defaults(func=cmd_transfer_analysis)
+
+    collect_bonus_parser = subparsers.add_parser(
+        "collect-bonus", help="Collect today's daily login bonus and report the amount"
+    )
+    collect_bonus_parser.add_argument(
+        "--all-leagues", action="store_true", help="Report for every league on the account instead of just one"
+    )
+    collect_bonus_parser.add_argument(
+        "--telegram", action="store_true",
+        help="Push a message when something was collected (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
+    )
+    collect_bonus_parser.set_defaults(func=cmd_collect_bonus)
 
     return parser
 

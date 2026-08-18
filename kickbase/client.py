@@ -216,6 +216,18 @@ class KickbaseClient:
         """
         return self._get(f"/v4/leagues/{league_id}/activitiesFeed?start={start}&max={max_items}")
 
+    def collect_bonus(self) -> dict:
+        """Collects the daily login bonus - a GET that actually claims it
+        as a side effect, not just checks for one (confirmed live: budget
+        increased by exactly the returned amount). Not league-scoped -
+        covers every league on the account in one call: {"it": [{"li":
+        league id, "lnm": league name, "v": amount collected, "day":
+        streak day, "b": budget snapshot after collecting}, ...]}. Empty
+        "it" (confirmed live, no error) when there's nothing left to
+        collect today - already claimed, or none available yet.
+        """
+        return self._get("/v4/bonus/collect")
+
     def get_lineup(self, league_id: str) -> dict:
         return self._get(f"/v4/leagues/{league_id}/lineup")
 

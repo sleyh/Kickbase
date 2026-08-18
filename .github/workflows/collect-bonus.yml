@@ -1,0 +1,34 @@
+name: Daily bonus collection
+
+# 1am Europe/Berlin. GitHub Actions cron is fixed UTC with no DST
+# awareness - hour 23 (previous UTC day) is correct for CEST (UTC+2).
+# Once Germany switches to CET (UTC+1) in autumn, shift this forward by
+# one hour to 0 to keep firing at the same local time (same caveat as
+# brief.yml/squad-value.yml/transfer-analysis.yml).
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  collect-bonus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/kickbase
+          key: kickbase-state-${{ github.run_id }}
+          restore-keys: kickbase-state-
+      - name: Collect daily bonus
+        env:
+          KICKBASE_EMAIL: ${{ secrets.KICKBASE_EMAIL }}
+          KICKBASE_PASSWORD: ${{ secrets.KICKBASE_PASSWORD }}
+          KICKBASE_LEAGUE_ID: ${{ secrets.KICKBASE_LEAGUE_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m kickbase.cli collect-bonus --telegram
