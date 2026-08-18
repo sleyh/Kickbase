@@ -506,6 +506,41 @@ def cmd_brief(args: argparse.Namespace) -> None:
         print("\n(sent to Telegram)")
 
 
+def cmd_squad_value(args: argparse.Namespace) -> None:
+    """Daily squad market-value recap, separate from `brief`'s advice
+    digest: every owned player's 24h change plus the total gain/loss
+    across the whole squad. Meant to run once a day shortly after
+    Kickbase's own daily value recalculation (see
+    .github/workflows/squad-value.yml), not tied to brief's schedule.
+    """
+    email, password = _load_credentials(args)
+    client = KickbaseClient(email, password)
+    client.login()
+
+    if args.all_leagues:
+        leagues = client.leagues
+    else:
+        league_id = _resolve_league_id(client, args)
+        leagues = [l for l in client.leagues if l.get("id") == league_id]
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if args.telegram and not (token and chat_id):
+        sys.exit("--telegram needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set.")
+
+    for league in leagues:
+        league_id = league["id"]
+        league_name = league.get("name", league_id)
+        squad = client.get_squad(league_id).get("it", [])
+        _enrich_with_history(client, league_id, squad)
+        text = report.render_squad_value_update(league_name, squad)
+        print(text)
+        print()
+        if args.telegram:
+            telegram.send_message(token, chat_id, text)
+            print("(sent to Telegram)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kickbase transfer market CLI")
     parser.add_argument("--email", help="Kickbase account email (or KICKBASE_EMAIL env var)")
@@ -557,6 +592,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-alerts", type=int, default=5, help="Cap alerts sent in a single run (default: 5)"
     )
     alert_parser.set_defaults(func=cmd_alert)
+
+    squad_value_parser = subparsers.add_parser(
+        "squad-value", help="Daily recap: each squad player's 24h value change + total gain/loss"
+    )
+    squad_value_parser.add_argument(
+        "--all-leagues", action="store_true", help="Cover every league on the account instead of just one"
+    )
+    squad_value_parser.add_argument(
+        "--telegram", action="store_true",
+        help="Push the recap to Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
+    )
+    squad_value_parser.set_defaults(func=cmd_squad_value)
 
     return parser
 

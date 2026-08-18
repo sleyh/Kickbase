@@ -48,6 +48,9 @@ python -m kickbase.cli brief
 # single poll: push a Telegram card for any newly-listed notable player
 # since the last run (what the GitHub Actions workflow uses, every 15 min)
 python -m kickbase.cli alert --telegram
+
+# daily recap: each squad player's 24h value change + total gain/loss
+python -m kickbase.cli squad-value --telegram
 ```
 
 Credentials can be passed via `.env`/environment variables (`KICKBASE_EMAIL`,
@@ -59,10 +62,10 @@ reused between runs so scheduled runs don't hammer the login endpoint.
 
 - **cron**: `*/5 * * * * cd /path/to/repo && .venv/bin/python -m kickbase.cli watch --once >> market.log 2>&1`
 - **systemd timer**: run `watch --once` as a `oneshot` service triggered by a `.timer` unit.
-- **GitHub Actions**: three workflows, all needing `KICKBASE_EMAIL`,
+- **GitHub Actions**: four workflows, all needing `KICKBASE_EMAIL`,
   `KICKBASE_PASSWORD`, and `KICKBASE_LEAGUE_ID` as repository secrets
   (Settings → Secrets and variables → Actions → New repository secret on
-  the repo) to actually run. All three also support manual
+  the repo) to actually run. All four also support manual
   `workflow_dispatch` for an on-demand run.
   - `transfer-market.yml` — every 15 minutes: `watch --once` (logs
     `[NEW]`/`[REMOVED]`/`[CHANGED]` to the Action's own output, see
@@ -74,11 +77,15 @@ reused between runs so scheduled runs don't hammer the login endpoint.
     only runs on manual trigger until the `schedule:` block is restored.
   - `brief.yml` — `brief --telegram`, at 6am/10am/2pm/6pm/8pm/midnight
     Europe/Berlin time (cron is UTC-fixed; the file has a comment on
-    adjusting for DST). Also needs `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`
-    as repository secrets (see "The briefing" below) to actually push
-    anywhere.
+    adjusting for DST).
+  - `squad-value.yml` — `squad-value --telegram`, once daily at 10pm
+    Europe/Berlin (see "Daily squad value update" below).
 
-  All three cache `~/.cache/kickbase` between runs.
+  `brief.yml` and `squad-value.yml` also need
+  `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` as repository secrets to
+  actually push anywhere.
+
+  All four cache `~/.cache/kickbase` between runs.
 
 `watch` persists the last-seen market snapshot to
 `~/.cache/kickbase/market_<leagueId>.json` and on each poll reports:
@@ -138,6 +145,22 @@ a real in-app bid on Vitalie Becker showed up as a "placed" alert with no
 CLI involvement in placing it. Like the new-listing alert, the first-ever
 run only baselines (no alerts) so pre-existing bids at feature-launch
 don't all fire as "new."
+
+## Daily squad value update
+
+`squad-value` is a separate daily recap from `brief` - not advice, just
+"what did today's market-value update do to what I already own." Fires
+once a day at 10pm Europe/Berlin (`squad-value.yml`), timed to land after
+Kickbase's own daily value recalculation.
+
+For each owned player it shows the real 24h change (`d1`, from the same
+market-value-history endpoint `brief` uses - see "Endpoints used" below),
+sorted best mover first, plus the total gain/loss summed across the whole
+squad and the squad's total current value. A player with no history yet
+(just bought, nothing to diff against) is listed separately rather than
+silently dropped. Text-only Telegram message, no photo - a per-player list
+like this doesn't map to a single featured-player card the way `brief`'s
+digest does.
 
 ## The briefing
 

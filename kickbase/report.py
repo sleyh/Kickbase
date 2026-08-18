@@ -344,6 +344,39 @@ def render_new_listing_alert(player: dict) -> dict:
     }
 
 
+def render_squad_value_update(league_name: str, squad: list[dict]) -> str:
+    """Daily squad market-value recap: every owned player's 24h change
+    plus the total gain/loss across the whole squad. Meant to fire once a
+    day right after Kickbase's own daily value recalculation (see cli.py's
+    `squad-value` command and its dedicated cron), separate from `brief`'s
+    advice digest - this is purely "what did today's update do to what I
+    already own," sorted best mover first so a bad day doesn't bury the
+    one bright spot at the bottom.
+    """
+    e = html.escape
+    with_delta = [p for p in squad if p.get("d1") is not None]
+    without_delta = [p for p in squad if p.get("d1") is None]
+    total_delta = sum(p.get("d1", 0) for p in with_delta)
+    total_value = sum(p.get("mv", 0) or 0 for p in squad)
+
+    lines = [
+        f"📊 <b>Daily Value Update — {e(league_name)}</b>",
+        "",
+        f"{'📈' if total_delta >= 0 else '📉'} <b>Squad total: {e(_signed(total_delta))} today</b>",
+        f"💰 Total squad value: {e(_compact(total_value))}",
+        "",
+    ]
+    with_delta.sort(key=lambda p: p.get("d1", 0), reverse=True)
+    for p in with_delta:
+        d1 = p.get("d1", 0)
+        icon = "🔺" if d1 > 0 else "🔻" if d1 < 0 else "▪️"
+        lines.append(f"{icon} <b>{e(_name(p))}</b>  {e(_signed(d1))}")
+    if without_delta:
+        lines.append("")
+        lines.append("ℹ️ No value history yet: " + ", ".join(e(_name(p)) for p in without_delta))
+    return "\n".join(lines)
+
+
 _BID_STATUS_ICONS = {"placed": "📤", "updated": "🔄", "won": "✅", "lost": "❌"}
 _BID_STATUS_LABELS = {"placed": "Bid placed", "updated": "Bid updated", "won": "Bid won", "lost": "Bid lost"}
 
