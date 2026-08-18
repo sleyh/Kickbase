@@ -344,6 +344,38 @@ def render_new_listing_alert(player: dict) -> dict:
     }
 
 
+_BID_STATUS_ICONS = {"placed": "📤", "updated": "🔄", "won": "✅", "lost": "❌"}
+_BID_STATUS_LABELS = {"placed": "Bid placed", "updated": "Bid updated", "won": "Bid won", "lost": "Bid lost"}
+
+
+def render_bid_status_alert(
+    player: dict, status: str, bid_amount: float | None, previous_amount: float | None = None
+) -> dict:
+    """A standalone Telegram card for something happening to *your own*
+    bid on a listing - placed, revised, won (the listing closed and the
+    player showed up in your squad), or lost (the listing closed and it
+    didn't). Fired from cli.py's `alert` command, which tracks your active
+    offers across polls via the market's own uop/uoid fields (see README's
+    "sealed bid" section - these only ever reflect your own offer, which
+    is exactly what this needs).
+    """
+    e = html.escape
+    caption_lines = [f"{_BID_STATUS_ICONS[status]} <b>{_BID_STATUS_LABELS[status]}: {e(_name(player))}</b>"]
+    if bid_amount is not None:
+        amount_line = f"💰 {e(_compact(bid_amount))}"
+        if status == "updated" and previous_amount is not None:
+            amount_line += f" (was {e(_compact(previous_amount))})"
+        caption_lines.append(amount_line)
+    if status in ("placed", "updated"):
+        caption_lines.append(e(_deadline_label(player)))
+    caption_lines.extend(e(ln) for ln in _trend_lines(player))
+    return {
+        "photo_url": _player_photo_url(player),
+        "caption": "\n".join(caption_lines),
+        "keyboard": telegram.inline_keyboard([[(f"🔍 {_name(player)}", _transfermarkt_url(player))]]),
+    }
+
+
 def render_telegram(league_name: str, data: BriefingData) -> dict:
     """Rich Telegram content: a featured player photo (the strongest buy
     candidate, or a sell candidate if there's nothing to buy) with an HTML

@@ -117,6 +117,28 @@ Given listings stay open for hours, not seconds, 15 minutes of latency
 captures nearly all the practical benefit; true sub-minute alerts would
 need an always-on polling process instead of a scheduled one.
 
+**Your own bid tracking** rides the same poll (`cli._track_my_bids()`,
+state in `~/.cache/kickbase/my_bids_<leagueId>.json`). Each run diffs your
+account's currently active offers - the market's `uop`/`uoid` fields,
+which only ever reflect your own offer (see "Important caveat" below) -
+against the previous run, and sends a Telegram card for:
+
+- **placed** - a new offer appeared that wasn't tracked last poll
+- **updated** - a tracked offer's amount changed (you re-bid)
+- **won** - a tracked offer's listing is gone from the market *and* the
+  player is now in your squad
+- **lost** - a tracked offer's listing is gone from the market and the
+  player isn't in your squad (someone else won it, or - per the sealed-bid
+  findings below - it went unsold because the bid wasn't enough)
+
+This reads your account's own offer state from the API, not anything this
+tool itself wrote, so it catches bids placed through the Kickbase app
+directly, not just ones placed via `bot`/manual testing - confirmed live:
+a real in-app bid on Vitalie Becker showed up as a "placed" alert with no
+CLI involvement in placing it. Like the new-listing alert, the first-ever
+run only baselines (no alerts) so pre-existing bids at feature-launch
+don't all fire as "new."
+
 ## The briefing
 
 `brief` (`kickbase/report.py`) is the current default way to use this:

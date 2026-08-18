@@ -154,6 +154,77 @@ def _alert_state_path(league_id: str) -> Path:
     return STATE_DIR / f"alert_seen_{league_id}.json"
 
 
+def _my_bids_state_path(league_id: str) -> Path:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    return STATE_DIR / f"my_bids_{league_id}.json"
+
+
+def _send_bid_alert(
+    player: dict, status: str, bid_amount, previous_amount,
+    telegram_enabled: bool, token: str | None, chat_id: str | None,
+) -> None:
+    alert = report.render_bid_status_alert(player, status, bid_amount, previous_amount)
+    if telegram_enabled:
+        if alert["photo_url"]:
+            telegram.send_photo(token, chat_id, alert["photo_url"], alert["caption"], alert["keyboard"])
+        else:
+            telegram.send_message(token, chat_id, alert["caption"], alert["keyboard"])
+
+
+def _track_my_bids(
+    client: KickbaseClient, league_id: str, league_name: str, market_items: list[dict],
+    telegram_enabled: bool, token: str | None, chat_id: str | None,
+) -> None:
+    """Diffs your own active offers (the market's uop/uoid/ofc fields -
+    only ever your own, see README) against the previous poll's snapshot
+    and alerts on anything that changed: a new bid, a revised bid amount,
+    or a tracked bid that's no longer on the market - resolved as "won" if
+    the player is now in your squad, "lost" otherwise. Works regardless of
+    whether the bid was placed through this tool or the Kickbase app
+    itself, since it's reading your account's own offer state from the API,
+    not anything this tool wrote.
+
+    Separate state file from the notable-new-listing tracking above - the
+    two are unrelated diffs over the same market snapshot.
+    """
+    state_file = _my_bids_state_path(league_id)
+    first_run = not state_file.exists()
+    previous: dict[str, dict] = {}
+    if not first_run:
+        try:
+            previous = json.loads(state_file.read_text())
+        except json.JSONDecodeError:
+            previous = {}
+
+    current_bids = {item["i"]: item for item in market_items if item.get("uop") is not None}
+
+    if not first_run:
+        for player_id, item in current_bids.items():
+            prev_item = previous.get(player_id)
+            if prev_item is None:
+                print(f"[{league_name}] BID PLACED: {_player_name(item)} at {item.get('uop')}")
+                _send_bid_alert(item, "placed", item.get("uop"), None, telegram_enabled, token, chat_id)
+            elif prev_item.get("uop") != item.get("uop"):
+                print(f"[{league_name}] BID UPDATED: {_player_name(item)} now {item.get('uop')} (was {prev_item.get('uop')})")
+                _send_bid_alert(
+                    item, "updated", item.get("uop"), prev_item.get("uop"), telegram_enabled, token, chat_id
+                )
+
+        resolved_ids = set(previous) - set(current_bids)
+        if resolved_ids:
+            squad_ids = {p.get("i") for p in client.get_squad(league_id).get("it", [])}
+            for player_id in resolved_ids:
+                prev_item = previous[player_id]
+                won = player_id in squad_ids
+                status = "won" if won else "lost"
+                print(f"[{league_name}] BID {'WON' if won else 'LOST'}: {_player_name(prev_item)}")
+                _send_bid_alert(
+                    prev_item, status, prev_item.get("uop"), None, telegram_enabled, token, chat_id
+                )
+
+    state_file.write_text(json.dumps(current_bids))
+
+
 def _diff_market(previous: dict[str, dict], current: dict[str, dict]) -> None:
     prev_ids, cur_ids = set(previous), set(current)
     for new_id in cur_ids - prev_ids:
@@ -208,19 +279,23 @@ def cmd_watch(args: argparse.Namespace) -> None:
 
 
 def cmd_alert(args: argparse.Namespace) -> None:
-    """Single poll: diff the market against the last-seen snapshot (see
-    _alert_state_path) and push a Telegram card for any newly-appeared,
-    notable Kickbase listing (strategy.is_notable_listing - manager
-    listings are skipped, same as brief). Meant to run on a tight cron
-    (.github/workflows/alert.yml) rather than in a loop - state persists
-    on disk across runs (via GitHub Actions cache in CI), so only
-    listings that are actually new since the *previous* run get reported,
-    not the whole market every time.
+    """Single poll, two independent diffs against the last-seen snapshot:
+
+    1. Any newly-appeared, notable Kickbase listing (strategy.is_notable_listing
+       - manager listings are skipped, same as brief) - see _alert_state_path.
+    2. Your own bids (_track_my_bids): a new or revised offer, or a
+       previously-tracked bid that's no longer on the market, resolved as
+       won/lost by checking your squad.
+
+    Meant to run on a tight cron (.github/workflows/transfer-market.yml)
+    rather than in a loop - state persists on disk across runs (via GitHub
+    Actions cache in CI), so only what's actually changed since the
+    *previous* run gets reported, not the whole market every time.
 
     The very first run for a league has no prior snapshot to diff
     against, so it just saves a baseline and alerts on nothing - otherwise
-    every listing already on the market would fire as "new" the moment
-    this is turned on.
+    every listing already on the market (and every bid already active)
+    would fire as "new" the moment this is turned on.
     """
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
@@ -270,6 +345,8 @@ def cmd_alert(args: argparse.Namespace) -> None:
                         telegram.send_message(token, chat_id, alert["caption"], alert["keyboard"])
 
         state_file.write_text(json.dumps(current))
+
+        _track_my_bids(client, league_id, league_name, list(current.values()), args.telegram, token, chat_id)
 
 
 def _max_squad_size(client: KickbaseClient, league_id: str) -> int:
