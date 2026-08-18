@@ -532,8 +532,9 @@ def cmd_squad_value(args: argparse.Namespace) -> None:
         league_id = league["id"]
         league_name = league.get("name", league_id)
         squad = client.get_squad(league_id).get("it", [])
+        budget = client.get_budget(league_id).get("b", 0)
         _enrich_with_history(client, league_id, squad)
-        text = report.render_squad_value_update(league_name, squad)
+        text = report.render_squad_value_update(league_name, squad, budget)
         print(text)
         print()
         if args.telegram:

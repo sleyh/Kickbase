@@ -344,7 +344,7 @@ def render_new_listing_alert(player: dict) -> dict:
     }
 
 
-def render_squad_value_update(league_name: str, squad: list[dict]) -> str:
+def render_squad_value_update(league_name: str, squad: list[dict], budget: float) -> str:
     """Daily squad market-value recap: every owned player's 24h change
     plus the total gain/loss across the whole squad. Meant to fire once a
     day right after Kickbase's own daily value recalculation (see cli.py's
@@ -352,18 +352,27 @@ def render_squad_value_update(league_name: str, squad: list[dict]) -> str:
     advice digest - this is purely "what did today's update do to what I
     already own," sorted best mover first so a bad day doesn't bury the
     one bright spot at the bottom.
+
+    Also shows budget (cash on hand) and net worth (budget + squad value)
+    alongside the squad value itself, since "how well am I doing overall"
+    is budget-plus-players, not just players - a big sale can grow the
+    budget line while shrinking the squad-value line, and neither one
+    alone tells the full story.
     """
     e = html.escape
     with_delta = [p for p in squad if p.get("d1") is not None]
     without_delta = [p for p in squad if p.get("d1") is None]
     total_delta = sum(p.get("d1", 0) for p in with_delta)
     total_value = sum(p.get("mv", 0) or 0 for p in squad)
+    net_worth = budget + total_value
 
     lines = [
         f"📊 <b>Daily Value Update — {e(league_name)}</b>",
         "",
         f"{'📈' if total_delta >= 0 else '📉'} <b>Squad total: {e(_signed(total_delta))} today</b>",
-        f"💰 Total squad value: {e(_compact(total_value))}",
+        f"💰 Budget: {e(_compact(budget))}",
+        f"👥 Squad value: {e(_compact(total_value))}",
+        f"🏦 Total value (budget + squad): {e(_compact(net_worth))}",
         "",
     ]
     with_delta.sort(key=lambda p: p.get("d1", 0), reverse=True)

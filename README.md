@@ -155,12 +155,14 @@ Kickbase's own daily value recalculation.
 
 For each owned player it shows the real 24h change (`d1`, from the same
 market-value-history endpoint `brief` uses - see "Endpoints used" below),
-sorted best mover first, plus the total gain/loss summed across the whole
-squad and the squad's total current value. A player with no history yet
-(just bought, nothing to diff against) is listed separately rather than
-silently dropped. Text-only Telegram message, no photo - a per-player list
-like this doesn't map to a single featured-player card the way `brief`'s
-digest does.
+sorted best mover first, plus the day's total gain/loss summed across the
+whole squad, current budget, current squad value, and net worth (budget +
+squad value) - a big sale grows budget while shrinking squad value, so
+neither number alone says whether you're actually doing better. A player
+with no history yet (just bought, nothing to diff against) is listed
+separately rather than silently dropped. Text-only Telegram message, no
+photo - a per-player list like this doesn't map to a single
+featured-player card the way `brief`'s digest does.
 
 ## The briefing
 
