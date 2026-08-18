@@ -100,6 +100,10 @@ def _signed(n: float) -> str:
     return f"{'+' if n >= 0 else ''}{_compact(n)}"
 
 
+def _signed_pct(n: float) -> str:
+    return f"{'+' if n >= 0 else ''}{n:.0f}%"
+
+
 def _trend_lines(player: dict) -> list[str]:
     """Each observed/predicted market-value figure (see
     predict.history_deltas, attached by cli.py's _enrich_with_history
@@ -408,6 +412,70 @@ def render_squad_value_update(
                 icon = "🟢" if delta > 0 else "🔴" if delta < 0 else "⚪"
                 delta_str = e(_signed(delta))
             lines.append(f"{icon} <b>{e(comp['name'])}</b>  {e(_compact(comp['total_value']))}  ({delta_str})")
+
+    return "\n".join(lines)
+
+
+def _spending_label(avg_pct: float | None) -> str:
+    """Qualitative read on a manager's average premium over current
+    market value across their computer-market buys. Thresholds are a
+    starting guess (not tuned against real behavior yet, since the league
+    is only a few days old) - 3%/15% split "basically paid asking price"
+    from "paid noticeably more than needed" from "consistently overspends."
+    """
+    if avg_pct is None:
+        return "ℹ️ no computer-market buys yet"
+    if avg_pct <= 3:
+        return f"🎯 pays close to asking price ({_signed_pct(avg_pct)} avg)"
+    if avg_pct <= 15:
+        return f"💵 pays a moderate premium ({_signed_pct(avg_pct)} avg)"
+    return f"🔥 tends to overspend ({_signed_pct(avg_pct)} avg)"
+
+
+def render_spending_analysis(league_name: str, profiles: list[dict]) -> str:
+    """Compares what each league member actually paid for a player
+    against that player's *current* market value - a close proxy for
+    value-at-purchase here since every transfer in a brand-new league is
+    only days old, not a general-purpose historical reconstruction - to
+    surface bidding behavior that Kickbase's sealed-bid design otherwise
+    hides completely (see README's "sealed bid" findings). This is only
+    possible retroactively, once a transfer has completed
+    (client.get_manager_transfers()), never for a listing that's still open.
+
+    profiles: list of {"name", "computer_buys": [{"player_name", "trp",
+    "mv", "premium_pct"}], "manager_buys": [...same shape plus "othnm"]}
+    from cli._build_spending_profiles(). Only computer-market buys feed
+    the per-manager average - manager-to-manager trades are shown
+    individually instead, since there are usually too few per manager for
+    an average to mean anything, and the price there reflects a human
+    negotiation, not beating a sealed-bid field.
+    """
+    e = html.escape
+    lines = [
+        f"💸 <b>Transfer Spending Analysis — {e(league_name)}</b>",
+        "ℹ️ Premium = price paid vs. that player's current market value",
+        "",
+    ]
+
+    def _avg(profile: dict) -> float:
+        buys = profile["computer_buys"]
+        return sum(b["premium_pct"] for b in buys) / len(buys) if buys else float("-inf")
+
+    for profile in sorted(profiles, key=_avg, reverse=True):
+        buys = profile["computer_buys"]
+        avg = sum(b["premium_pct"] for b in buys) / len(buys) if buys else None
+        count = f"{len(buys)} computer buy{'s' if len(buys) != 1 else ''}"
+        lines.append(f"{_spending_label(avg)} — <b>{e(profile['name'])}</b> ({count})")
+
+    manager_trades = [(p["name"], b) for p in profiles for b in p["manager_buys"]]
+    if manager_trades:
+        lines.append("")
+        lines.append("🤝 <b>Manager-to-manager trades</b>")
+        for name, b in sorted(manager_trades, key=lambda x: abs(x[1]["premium_pct"]), reverse=True):
+            lines.append(
+                f"{e(name)} paid {e(_signed_pct(b['premium_pct']))} vs. value for {e(b['player_name'])} "
+                f"({e(_compact(b['trp']))} vs. {e(_compact(b['mv']))}) — bought from {e(b['othnm'])}"
+            )
 
     return "\n".join(lines)
 

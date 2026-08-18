@@ -419,6 +419,89 @@ def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | N
     return competitors
 
 
+def _build_spending_profiles(client: KickbaseClient, league_id: str) -> list[dict]:
+    """Per league member: every player they've bought (tty=1 in
+    client.get_manager_transfers()), with the premium they paid over that
+    player's *current* market value, split into computer-market buys (no
+    othnm) vs. manager-to-manager trades (othnm present) - see
+    report.render_spending_analysis() for why the split matters. Caches
+    each player's current mv across managers so a player bought/resold
+    multiple times only costs one get_player() call.
+    """
+    ranking = client.get_ranking(league_id)
+    managers = {u["i"]: u.get("n", "?") for u in ranking.get("us", []) if u.get("i")}
+
+    mv_cache: dict[str, float | None] = {}
+
+    def _current_mv(player_id: str) -> float | None:
+        if player_id not in mv_cache:
+            try:
+                mv_cache[player_id] = client.get_player(league_id, player_id).get("mv")
+            except KickbaseError:
+                mv_cache[player_id] = None
+        return mv_cache[player_id]
+
+    profiles = []
+    for manager_id, name in managers.items():
+        try:
+            log = client.get_manager_transfers(league_id, manager_id).get("it", [])
+        except KickbaseError as exc:
+            print(f"Warning: couldn't fetch transfer history for {name}: {exc}", file=sys.stderr)
+            continue
+        computer_buys, manager_buys = [], []
+        for t in log:
+            if t.get("tty") != 1:  # only purchases feed spending behavior, not sales
+                continue
+            trp, mv = t.get("trp"), _current_mv(t.get("pi"))
+            if not trp or not mv:
+                continue
+            entry = {"player_name": t.get("pn"), "trp": trp, "mv": mv, "premium_pct": (trp - mv) / mv * 100}
+            if t.get("othnm"):
+                entry["othnm"] = t["othnm"]
+                manager_buys.append(entry)
+            else:
+                computer_buys.append(entry)
+        profiles.append({"name": name, "computer_buys": computer_buys, "manager_buys": manager_buys})
+    return profiles
+
+
+def cmd_transfer_analysis(args: argparse.Namespace) -> None:
+    """On-demand only (no scheduled workflow calls this): for every
+    league member, compares what they actually paid for each player
+    against that player's current market value, to see who pays close to
+    asking price on computer listings vs who tends to overspend, plus
+    every manager-to-manager trade's premium. This is the only way to see
+    anything about competing bids at all - Kickbase's sealed-bid design
+    (see README) hides them completely while a listing is open; this only
+    works retroactively, once a transfer has already completed.
+    """
+    email, password = _load_credentials(args)
+    client = KickbaseClient(email, password)
+    client.login()
+
+    if args.all_leagues:
+        leagues = client.leagues
+    else:
+        league_id = _resolve_league_id(client, args)
+        leagues = [l for l in client.leagues if l.get("id") == league_id]
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if args.telegram and not (token and chat_id):
+        sys.exit("--telegram needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set.")
+
+    for league in leagues:
+        league_id = league["id"]
+        league_name = league.get("name", league_id)
+        profiles = _build_spending_profiles(client, league_id)
+        text = report.render_spending_analysis(league_name, profiles)
+        print(text)
+        print()
+        if args.telegram:
+            telegram.send_message(token, chat_id, text)
+            print("(sent to Telegram)")
+
+
 def cmd_bot(args: argparse.Namespace) -> None:
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
@@ -657,6 +740,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip fetching other league members' squads (faster, own squad only)"
     )
     squad_value_parser.set_defaults(func=cmd_squad_value)
+
+    transfer_analysis_parser = subparsers.add_parser(
+        "transfer-analysis",
+        help="On-demand: who pays close to asking price vs who overspends, per league member",
+    )
+    transfer_analysis_parser.add_argument(
+        "--all-leagues", action="store_true", help="Cover every league on the account instead of just one"
+    )
+    transfer_analysis_parser.add_argument(
+        "--telegram", action="store_true",
+        help="Push the analysis to Telegram (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
+    )
+    transfer_analysis_parser.set_defaults(func=cmd_transfer_analysis)
 
     return parser
 

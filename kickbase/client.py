@@ -160,6 +160,21 @@ class KickbaseClient:
         """
         return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/squad")
 
+    def get_manager_transfers(self, league_id: str, manager_id: str) -> dict:
+        """A manager's transfer history: {"u", "unm", "it": [{"pi", "pn",
+        "tid", "tty" (1=bought, 2=sold), "othnm" (the other party's name -
+        only present when it was a real manager, not Kickbase itself),
+        "trp" (price paid/received), "dt", "pim"}]}.
+
+        Confirmed live: a manager-to-manager trade shows up as a mirrored
+        pair across both parties' own logs - identical player, price, and
+        timestamp, with tty=2+othnm=<buyer> on the seller's side and
+        tty=1+othnm=<seller> on the buyer's side. This is what makes
+        sealed bids retroactively visible once a listing resolves - see
+        README's "Transfer spending analysis" section.
+        """
+        return self._get(f"/v4/leagues/{league_id}/managers/{manager_id}/transfer")
+
     def get_lineup(self, league_id: str) -> dict:
         return self._get(f"/v4/leagues/{league_id}/lineup")
 

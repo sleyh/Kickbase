@@ -55,6 +55,9 @@ python -m kickbase.cli squad-value --telegram
 
 # same, but skip fetching competitor squads (faster)
 python -m kickbase.cli squad-value --telegram --no-competitors
+
+# on-demand: who pays close to asking price vs who overspends, per league member
+python -m kickbase.cli transfer-analysis
 ```
 
 Credentials can be passed via `.env`/environment variables (`KICKBASE_EMAIL`,
@@ -189,6 +192,44 @@ display helpers work on them unchanged. One extra `get_market_value_history`
 call per competitor player (~10-13 players × 6 competitors here), so this
 adds real runtime to the daily job (~15s total) but nothing outsized for
 a once-a-day cron; `--no-competitors` skips it if that's ever a problem.
+
+## Transfer spending analysis
+
+`transfer-analysis` answers "who overpays and who pays close to asking
+price" - on-demand only, no scheduled workflow calls it, since it's an
+investigative tool rather than a daily digest.
+
+The sealed-bid design (see below) hides competing bids completely while a
+listing is open - nobody, including this tool, can see what anyone else
+is bidding in real time. But `GET
+/v4/leagues/{leagueId}/managers/{managerId}/transfer` (found by reading
+the API doc's OpenAPI spec, same as the manager-squad endpoint above)
+exposes every completed transfer *after the fact*: `tty` is 1 for a buy
+and 2 for a sale, and `othnm` carries the other party's name whenever it
+was a real manager rather than Kickbase - confirmed live by finding the
+exact same trade (player, price, timestamp) mirrored on both sides: one
+manager's log showed `tty:2, othnm:"Igor Pamic"` for a sale, and Igor
+Pamic's own log showed the identical trade as `tty:1, othnm:"kicktoph"`.
+So a sealed bid stops being sealed the moment it resolves - you just
+can't see it coming.
+
+`cli._build_spending_profiles()` takes every buy (`tty:1`) from each
+manager's log and compares the price paid (`trp`) against that player's
+*current* market value - a reasonable proxy here since this league is
+only days old and every transfer in it is recent, not a general
+historical-price reconstruction (there's no endpoint for a player's mv on
+an arbitrary past date, only the recent daily series `brief` already
+uses). Buys are split into computer-market (`othnm` absent) and
+manager-to-manager (`othnm` present): only the former feeds each
+manager's average "premium %" and qualitative label (pays close to
+asking price / a moderate premium / tends to overspend - thresholds in
+`report._spending_label()`, not yet tuned against real behavior), since
+there are usually too few manager-to-manager trades per person for an
+average to mean anything, and that price reflects a human negotiation
+rather than beating a sealed-bid field. Manager-to-manager trades are
+listed individually instead. Live test showed real, useful spread - one
+manager averaging +20% over value on computer buys against others
+clustered around +4-12%.
 
 ## The briefing
 
@@ -429,6 +470,7 @@ deadline` note for manager ones, rather than leaving it blank.
 | Player market value history (24h/7d/etc.) | `GET /v4/leagues/{leagueId}/players/{playerId}/marketValue/{timeframe}` |
 | Owned squad | `GET /v4/leagues/{leagueId}/squad` |
 | Another manager's squad | `GET /v4/leagues/{leagueId}/managers/{managerId}/squad` |
+| A manager's transfer history | `GET /v4/leagues/{leagueId}/managers/{managerId}/transfer` |
 | League standings / member list | `GET /v4/leagues/{leagueId}/ranking` |
 | Budget | `GET /v4/leagues/{leagueId}/me/budget` |
 | Get/set lineup | `GET`/`POST /v4/leagues/{leagueId}/lineup` |
