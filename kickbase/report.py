@@ -25,6 +25,15 @@ KEYBOARD_LIMIT = 8  # cap on link buttons so the keyboard stays usable
 CDN_BASE = "https://kickbase.b-cdn.net/"
 TRANSFERMARKT_SEARCH = "https://www.transfermarkt.com/schnellsuche/ergebnis/schnellsuche?query="
 
+# Kickbase lets a bid push your budget negative, up to a debt ceiling of
+# 33% of your total squad value - confirmed live via binary search on two
+# real listings (a high-value one and a floor-priced one): the accepted
+# bid ceiling matched budget + 0.33*squad_value to within single-dollar
+# rounding on a ~95m number, and had nothing to do with either listing's
+# own price (an earlier "1.3x listing price" theory was a coincidence
+# from comparing against a stale, lower squad value at the time).
+DEBT_CEILING_RATIO = 0.33
+
 
 @dataclass
 class BriefingData:
@@ -416,11 +425,14 @@ def render_squad_value_update(
             budget = comp.get("estimated_budget")
             if budget is not None:
                 total = budget + comp["total_value"]
+                spending_power = budget + DEBT_CEILING_RATIO * comp["total_value"]
                 lines.append(f"   💰 budget ≈{e(_compact(budget))}")
                 lines.append(f"   🏦 total ≈{e(_compact(total))}")
+                lines.append(f"   💪 can spend up to ≈{e(_compact(spending_power))} (33% debt rule)")
         lines.append("")
         lines.append("<i>ℹ️ ≈ = reconstructed estimate, not their real number</i>")
         lines.append("<i>(likely a lower bound - private bonuses/rewards aren't counted)</i>")
+        lines.append("<i>💪 = max bid Kickbase allows: budget + 33% of squad value</i>")
 
     return "\n".join(lines)
 

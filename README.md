@@ -328,6 +328,22 @@ labels every competitor
 figure with `≈` and says so explicitly rather than presenting an estimate
 as fact.
 
+**The 33% debt ceiling.** Kickbase lets a bid push your budget negative -
+confirmed live, with real money, via binary search on two listings (a
+normally-priced one and a floor-priced one): the actual accepted-bid
+ceiling matched `budget + 0.33 × squad_value` to within single-dollar
+rounding on a ~95m number, and had nothing to do with either listing's
+own price (an earlier "1.3× listing price" theory turned out to be a
+coincidence from comparing against a stale, lower squad value measured
+minutes earlier - re-testing with contemporaneous numbers confirmed the
+debt-ceiling formula precisely). `report.DEBT_CEILING_RATIO = 0.33` -
+the daily message shows this as "💪 can spend up to" per competitor
+(`estimated_budget + 0.33 × squad_value`), which stays meaningfully
+positive even for a manager whose *estimated* budget has gone negative
+(a heavily-invested squad still backs a large real debt ceiling) - this
+is genuinely the more useful "how much room does this manager have"
+number, since a negative budget alone doesn't mean they're out of moves.
+
 ## Transfer spending analysis
 
 `transfer-analysis` answers "who overpays and who pays close to asking
