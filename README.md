@@ -206,13 +206,32 @@ shown total dropped from +3.1m to +2.6m once a same-day purchase's
 -444k entirely once his own inflated same-day purchase was removed - not
 edge cases, real numbers that were wrong before this fix.
 `cli._is_delta_attributable()` compares each player's actual acquisition
-day (from their transfer log's most recent `tty=1` buy) against
+timing (from their transfer log's most recent `tty=1` buy) against
 `predict.history_deltas()`'s `d1_window_start_day` (the real day the
-window began, not a naive "bought today" guess, which would get the
-timing wrong relative to daily update cutoffs the same way join-date
-reasoning did earlier in this README). Excluded players still show their
-individual `d1` in the per-player list (real, informative number), just
-labeled "(just bought - not in total)" and left out of the sum.
+window began, not a naive "bought today" guess). Excluded players still
+show their individual `d1` in the per-player list (real, informative
+number), just labeled "(just bought - not in total)" and left out of the
+sum.
+
+Getting the timing right needed a second pass. The first version compared
+raw calendar days and broke on Hoffmeier: bought 2026-08-18T15:58 UTC,
+still flagged as "just bought - not in total" despite being owned well
+before that day's market-value update fired. History entries are indexed
+by the day whose update produced them - `dt=D`'s `mv` is the value
+*after* day D's update runs - so `d1 = mv(latest) - mv(window_start)` is
+the movement produced by the update on day `window_start + 1`. A buy
+counts toward that update if it landed before day D's cutoff hour, in
+which case `cli._first_update_day_after_buy()` resolves it to day D
+itself (not D-1); at/after the cutoff it resolves to D+1. This is the
+mirror image of `_reference_day_for_join()`, not a reuse of it - a join
+asks which close price a squad snapshot used (shifts back a day
+pre-cutoff, since yesterday's close was the latest available), while a
+purchase asks whether an update already reflects the new ownership
+(doesn't shift - the imminent update is the first one that does).
+Conflating the two was the second bug. Confirmed live: Hoffmeier
+(pre-cutoff same-day buy) is now attributable and included in the total;
+Mensah, bought the same day but after the cutoff (22:40 UTC), correctly
+stays excluded.
 
 **Competitors.** The message also includes every other league member's
 squad value and today's gain/loss, ranked best to worst -

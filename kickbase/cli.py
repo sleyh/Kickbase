@@ -411,6 +411,30 @@ def _reference_day_for_join(join_dt: str) -> int:
     return day_index - 1 if dt.hour < UPDATE_CUTOFF_HOUR_UTC else day_index
 
 
+def _first_update_day_after_buy(buy_dt: str) -> int:
+    """Epoch day index of the *first* daily market-value update this
+    purchase was already in place for. history entries are indexed by the
+    day whose update produced them - dt=D's mv is the value AFTER day D's
+    update fires. Bought before day D's cutoff hour -> still in the squad
+    when day D's own update fires -> first-included update is day D
+    itself. Bought at/after the cutoff -> day D's update already fired
+    without them -> first-included update is day D+1.
+
+    This is the mirror image of _reference_day_for_join(), not the same
+    function: a join asks "which close price was my squad valued at",
+    which shifts *back* a day pre-cutoff (yesterday's close was still the
+    latest available). A purchase asks "which update already reflects my
+    ownership", which does *not* shift pre-cutoff - the very update about
+    to fire is the first one that does. Conflating the two was the bug:
+    Hoffmeier, bought 2026-08-18T15:58 UTC (pre-18:00 cutoff), was already
+    owned for that day's update - first_update_day = 18th, matching
+    d1_window's latest-entry day, so his entire d1 is attributable.
+    """
+    dt = datetime.fromisoformat(buy_dt.replace("Z", "+00:00"))
+    day_index = _day_index(buy_dt)
+    return day_index if dt.hour < UPDATE_CUTOFF_HOUR_UTC else day_index + 1
+
+
 def _all_manager_transfers(client: KickbaseClient, league_id: str, manager_id: str) -> list[dict]:
     """Every transfer for a manager, walking get_manager_transfers()'s
     pagination fully rather than trusting a single page - important here
@@ -429,7 +453,8 @@ def _all_manager_transfers(client: KickbaseClient, league_id: str, manager_id: s
 
 
 def _owned_since_day(player_id: str, transfer_log: list[dict]) -> int | None:
-    """Epoch day index of this player's most recent tty=1 buy in the log,
+    """Epoch day index of the first daily update this player's most recent
+    tty=1 buy was already in place for (see _first_update_day_after_buy),
     or None if they were never bought (starting allocation - owned since
     before any tracked history, so never excluded by
     _is_delta_attributable()).
@@ -437,18 +462,20 @@ def _owned_since_day(player_id: str, transfer_log: list[dict]) -> int | None:
     buys = [t for t in transfer_log if t.get("pi") == player_id and t.get("tty") == 1]
     if not buys:
         return None
-    return _day_index(max(t["dt"] for t in buys))
+    return _first_update_day_after_buy(max(t["dt"] for t in buys))
 
 
 def _is_delta_attributable(player: dict, transfer_log: list[dict]) -> bool:
     """Whether a player's d1 (24h value change) can be credited to their
-    current owner in a "squad total gain today" sum. False if they were
-    bought on or after the day the d1 window started (predict.history_deltas()'s
-    "d1_window_start_day") - some or all of that movement happened before
-    or without this manager owning them, so counting the full d1 would
-    overstate what actually happened to their squad. Confirmed live: a
-    player bought hours earlier the same day still contributed their
-    entire d1 to a manager's total before this fix.
+    current owner in a "squad total gain today" sum. d1 = mv(latest entry)
+    - mv(window_start entry), i.e. the movement produced by the update
+    that fired on day (window_start + 1). Attributable iff that purchase
+    was already in place for that update, i.e. owned_since <= window_start
+    + 1. Confirmed live: Hoffmeier, bought 2026-08-18T15:58 UTC (before
+    that day's ~18:00 UTC update), owned_since=18th=window_start(17th)+1 ->
+    attributable. A player bought only after that update fires (e.g.
+    22:40 UTC the same day) gets owned_since=19th > 18th -> excluded, since
+    the entire visible d1 predates their ownership.
     """
     window_start = player.get("d1_window_start_day")
     if window_start is None:
@@ -456,7 +483,7 @@ def _is_delta_attributable(player: dict, transfer_log: list[dict]) -> bool:
     owned_since = _owned_since_day(player.get("i"), transfer_log)
     if owned_since is None:
         return True  # starting allocation - always attributable
-    return owned_since < window_start
+    return owned_since <= window_start + 1
 
 
 def _achievement_state_path(league_id: str) -> Path:
