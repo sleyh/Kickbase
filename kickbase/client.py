@@ -58,13 +58,23 @@ class KickbaseClient:
         self._save_cached_token()
 
     def _load_cached_token(self) -> bool:
+        """Missing "user_id" is treated as a cache miss, not just a missing
+        field - confirmed live as the cause of a real outage: GitHub
+        Actions' cache restore-keys fell back to a token.json written by
+        an older commit (before user_id was added to _save_cached_token),
+        the JWT itself was still valid so no fresh login ever triggered,
+        and every run silently called manager transfer endpoints with
+        user_id=None ("managers/None/transfer") until the token's own
+        multi-day expiry forced a real login. A token without a user_id is
+        useless to this client regardless of how long it has left to live.
+        """
         if not TOKEN_CACHE_PATH.exists():
             return False
         try:
             cached = json.loads(TOKEN_CACHE_PATH.read_text())
         except (json.JSONDecodeError, OSError):
             return False
-        if cached.get("email") != self.email or not cached.get("tkn"):
+        if cached.get("email") != self.email or not cached.get("tkn") or not cached.get("user_id"):
             return False
         self.token = cached["tkn"]
         self.leagues = cached.get("srvl", [])
