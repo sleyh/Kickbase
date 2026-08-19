@@ -195,6 +195,25 @@ separately rather than silently dropped. Text-only Telegram message, no
 photo - a per-player list like this doesn't map to a single
 featured-player card the way `brief`'s digest does.
 
+**Attribution fix.** The "Squad total" sum only counts a player's `d1` if
+they were owned through the *entire* 1-day window it covers - not just
+"has a d1 value." A player bought hours earlier the same day still has a
+real `d1` (market value doesn't care who owns it), but part or all of
+that movement happened before this manager owned them, so summing it
+into "today's gain" overstated it. Confirmed live: Dimitar Berbatov's
+shown total dropped from +3.1m to +2.6m once a same-day purchase's
+266,880 was correctly excluded, and Steffen's flipped from positive to
+-444k entirely once his own inflated same-day purchase was removed - not
+edge cases, real numbers that were wrong before this fix.
+`cli._is_delta_attributable()` compares each player's actual acquisition
+day (from their transfer log's most recent `tty=1` buy) against
+`predict.history_deltas()`'s `d1_window_start_day` (the real day the
+window began, not a naive "bought today" guess, which would get the
+timing wrong relative to daily update cutoffs the same way join-date
+reasoning did earlier in this README). Excluded players still show their
+individual `d1` in the per-player list (real, informative number), just
+labeled "(just bought - not in total)" and left out of the sum.
+
 **Competitors.** The message also includes every other league member's
 squad value and today's gain/loss, ranked best to worst -
 `cli._fetch_competitors()`. This corrects an earlier, wrong conclusion in

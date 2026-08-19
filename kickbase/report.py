@@ -379,11 +379,20 @@ def render_squad_value_update(
     players had value history yet) - one entry per other league member,
     from cli.py's per-manager squad fetch (GET
     /v4/leagues/{leagueId}/managers/{managerId}/squad).
+
+    Each squad player may carry an "attributable" flag (set by cli.py via
+    _is_delta_attributable()) - False means they were bought partway
+    through the d1 window, so some of their real market movement happened
+    before/without this manager owning them. Their d1 still displays (real,
+    informative number), but is excluded from the summed "Squad total"
+    so a same-day purchase can't inflate it - confirmed live this was
+    happening before the flag existed. Missing the flag entirely (e.g.
+    old cached data) defaults to attributable, matching prior behavior.
     """
     e = html.escape
     with_delta = [p for p in squad if p.get("d1") is not None]
     without_delta = [p for p in squad if p.get("d1") is None]
-    total_delta = sum(p.get("d1", 0) for p in with_delta)
+    total_delta = sum(p.get("d1", 0) for p in with_delta if p.get("attributable", True))
     total_value = sum(p.get("mv", 0) or 0 for p in squad)
     net_worth = budget + total_value
 
@@ -400,7 +409,8 @@ def render_squad_value_update(
     for p in with_delta:
         d1 = p.get("d1", 0)
         icon = "🟢" if d1 > 0 else "🔴" if d1 < 0 else "⚪"
-        lines.append(f"{icon} <b>{e(_name(p))}</b>  {e(_signed(d1))}")
+        note = "" if p.get("attributable", True) else " (just bought - not in total)"
+        lines.append(f"{icon} <b>{e(_name(p))}</b>  {e(_signed(d1))}{e(note)}")
     if without_delta:
         lines.append("")
         lines.append("ℹ️ No value history yet: " + ", ".join(e(_name(p)) for p in without_delta))

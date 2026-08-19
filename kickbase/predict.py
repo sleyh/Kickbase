@@ -31,15 +31,20 @@ def history_deltas(history: dict) -> dict[str, float | None]:
     """Given a get_market_value_history() response, returns the actual
     observed {"d1": 1-day change, "d7": 7-day change} in market value -
     None for either if there isn't enough history yet (e.g. a player who
-    only just appeared).
+    only just appeared). Also returns "d1_window_start_day" (the epoch
+    day index of entries[-2], i.e. when the d1 window began) - a squad
+    value's "today's gain" is only correct to sum d1 across players a
+    manager owned for the *entire* window; a player bought partway
+    through it saw some of that market movement happen before/without
+    this manager owning them. See cli._is_delta_attributable().
     """
     entries = history.get("it") or []
     if len(entries) < 2:
-        return {"d1": None, "d7": None}
+        return {"d1": None, "d7": None, "d1_window_start_day": None}
     latest = entries[-1].get("mv")
     d1 = latest - entries[-2]["mv"] if len(entries) >= 2 else None
     d7 = latest - entries[-8]["mv"] if len(entries) >= 8 else None
-    return {"d1": d1, "d7": d7}
+    return {"d1": d1, "d7": d7, "d1_window_start_day": entries[-2].get("dt")}
 
 
 def naive_projection(player: dict) -> float | None:

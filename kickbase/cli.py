@@ -389,18 +389,25 @@ def _normalize_manager_squad_items(items: list[dict]) -> list[dict]:
 UPDATE_CUTOFF_HOUR_UTC = 18  # the daily market-value update empirically fires ~18:00-20:00 UTC
 
 
+def _day_index(dt_str: str) -> int:
+    """Epoch day index (matching market-value-history's "dt") for an ISO
+    timestamp like the ones every endpoint here uses.
+    """
+    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    return (dt.date() - date(1970, 1, 1)).days
+
+
 def _reference_day_for_join(join_dt: str) -> int:
-    """Epoch day index (matching market-value-history's "dt") to value a
-    manager's starting-allocation squad at: the day *before* they joined
-    if they joined before the daily value update fires that day (their
-    squad was priced using the previous day's close, since that day's own
-    update hadn't landed yet), otherwise the join day itself. Validated to
-    the exact budget dollar against a real account that joined at 11:53
-    UTC - see README's budget-reconstruction section for the full
-    derivation.
+    """Epoch day index to value a manager's starting-allocation squad at:
+    the day *before* they joined if they joined before the daily value
+    update fires that day (their squad was priced using the previous
+    day's close, since that day's own update hadn't landed yet),
+    otherwise the join day itself. Validated to the exact budget dollar
+    against a real account that joined at 11:53 UTC - see README's
+    budget-reconstruction section for the full derivation.
     """
     dt = datetime.fromisoformat(join_dt.replace("Z", "+00:00"))
-    day_index = (dt.date() - date(1970, 1, 1)).days
+    day_index = _day_index(join_dt)
     return day_index - 1 if dt.hour < UPDATE_CUTOFF_HOUR_UTC else day_index
 
 
@@ -419,6 +426,37 @@ def _all_manager_transfers(client: KickbaseClient, league_id: str, manager_id: s
         entries.extend(batch)
         start += len(batch)
     return entries
+
+
+def _owned_since_day(player_id: str, transfer_log: list[dict]) -> int | None:
+    """Epoch day index of this player's most recent tty=1 buy in the log,
+    or None if they were never bought (starting allocation - owned since
+    before any tracked history, so never excluded by
+    _is_delta_attributable()).
+    """
+    buys = [t for t in transfer_log if t.get("pi") == player_id and t.get("tty") == 1]
+    if not buys:
+        return None
+    return _day_index(max(t["dt"] for t in buys))
+
+
+def _is_delta_attributable(player: dict, transfer_log: list[dict]) -> bool:
+    """Whether a player's d1 (24h value change) can be credited to their
+    current owner in a "squad total gain today" sum. False if they were
+    bought on or after the day the d1 window started (predict.history_deltas()'s
+    "d1_window_start_day") - some or all of that movement happened before
+    or without this manager owning them, so counting the full d1 would
+    overstate what actually happened to their squad. Confirmed live: a
+    player bought hours earlier the same day still contributed their
+    entire d1 to a manager's total before this fix.
+    """
+    window_start = player.get("d1_window_start_day")
+    if window_start is None:
+        return True  # no window info to compare against - don't exclude
+    owned_since = _owned_since_day(player.get("i"), transfer_log)
+    if owned_since is None:
+        return True  # starting allocation - always attributable
+    return owned_since < window_start
 
 
 def _achievement_state_path(league_id: str) -> Path:
@@ -525,7 +563,7 @@ def _collect_manager_stats(
 
 def _estimate_manager_budget(
     client: KickbaseClient, league_id: str, manager_id: str, manager_name: str,
-    join_dt: str, squad_items: list[dict], league_size: int,
+    join_dt: str, squad_items: list[dict], league_size: int, log: list[dict],
 ) -> float:
     """Reconstructs a manager's current budget: Kickbase's fixed 150M
     starting budget, minus their starting-allocation squad's value (see
@@ -542,11 +580,11 @@ def _estimate_manager_budget(
     equivalent for another manager - see client.get_achievements()) -
     for a competitor this is still only a lower bound, since a handful of
     achievements have no inference rule at all (see achievements.py) and
-    bonus collections are invisible entirely. squad_items is whatever's
-    already been fetched for this manager (get_squad() or
-    get_manager_squad(), already normalized) so this doesn't re-fetch it.
+    bonus collections are invisible entirely. squad_items and log are
+    whatever's already been fetched for this manager (get_squad() or
+    get_manager_squad(), already normalized, and _all_manager_transfers())
+    so this doesn't re-fetch either.
     """
-    log = _all_manager_transfers(client, league_id, manager_id)
     bought_ids_ever = {t["pi"] for t in log if t.get("tty") == 1}
     current_ids = {p.get("i") for p in squad_items}
     sold_ids = {t["pi"] for t in log if t.get("tty") == 2}
@@ -605,15 +643,20 @@ def _fetch_competitors(client: KickbaseClient, league_id: str) -> list[dict] | N
         _normalize_manager_squad_items(squad)
         _enrich_with_history(client, league_id, squad)
         total_value = sum(p.get("mv", 0) or 0 for p in squad)
-        deltas = [p.get("d1") for p in squad if p.get("d1") is not None]
-        total_delta = sum(deltas) if deltas else None
+
+        log = _all_manager_transfers(client, league_id, manager_id)
+        # Only sum d1 for players this manager owned through the *whole*
+        # window - someone bought hours ago still shows real d1 movement
+        # from before they owned them, which isn't this manager's gain.
+        attributable = [p for p in squad if p.get("d1") is not None and _is_delta_attributable(p, log)]
+        total_delta = sum(p["d1"] for p in attributable) if attributable else None
 
         estimated_budget = None
         join_dt = manager.get("jd")
         if join_dt:
             try:
                 estimated_budget = _estimate_manager_budget(
-                    client, league_id, manager_id, manager_name, join_dt, squad, league_size
+                    client, league_id, manager_id, manager_name, join_dt, squad, league_size, log
                 )
             except KickbaseError as exc:
                 print(f"Warning: couldn't estimate budget for {manager_name}: {exc}", file=sys.stderr)
@@ -918,6 +961,9 @@ def cmd_squad_value(args: argparse.Namespace) -> None:
         squad = client.get_squad(league_id).get("it", [])
         budget = client.get_budget(league_id).get("b", 0)
         _enrich_with_history(client, league_id, squad)
+        my_log = _all_manager_transfers(client, league_id, client.user_id)
+        for player in squad:
+            player["attributable"] = _is_delta_attributable(player, my_log)
         competitors = None if args.no_competitors else _fetch_competitors(client, league_id)
         text = report.render_squad_value_update(league_name, squad, budget, competitors)
         print(text)
