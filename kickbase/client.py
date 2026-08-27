@@ -91,10 +91,18 @@ class KickbaseClient:
         }))
         TOKEN_CACHE_PATH.chmod(0o600)
 
+    # A genuinely expired token gets 403 from this API, not 401 (confirmed
+    # live: decoded a cached token past its own "exp" claim, hit a real
+    # endpoint with it, got 403 with an empty body - no 401 anywhere). The
+    # retry-with-fresh-login logic below has to cover both, or an expired
+    # token is never detected and every call fails forever, since nothing
+    # ever forces the re-login that would replace it.
+    _AUTH_RETRY_STATUSES = (401, 403)
+
     def _get(self, path: str) -> Any:
         resp = self.session.get(f"{self.base_url}{path}", headers=self._headers(), timeout=15)
-        if resp.status_code == 401:
-            # Cached token expired: force a fresh login and retry once.
+        if resp.status_code in self._AUTH_RETRY_STATUSES:
+            # Cached token expired/invalid: force a fresh login and retry once.
             self.login(use_cache=False)
             resp = self.session.get(f"{self.base_url}{path}", headers=self._headers(), timeout=15)
         if not resp.ok:
@@ -104,7 +112,7 @@ class KickbaseClient:
     def _post(self, path: str, body: dict | None = None) -> Any:
         headers = {**self._headers(), "Content-Type": "application/json"}
         resp = self.session.post(f"{self.base_url}{path}", headers=headers, json=body or {}, timeout=15)
-        if resp.status_code == 401:
+        if resp.status_code in self._AUTH_RETRY_STATUSES:
             self.login(use_cache=False)
             headers = {**self._headers(), "Content-Type": "application/json"}
             resp = self.session.post(f"{self.base_url}{path}", headers=headers, json=body or {}, timeout=15)

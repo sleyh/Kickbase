@@ -651,6 +651,37 @@ until bought or withdrawn rather than closing on a timer. `brief` shows
 this as `⏰ Xh Ym left` for computer listings, or an explicit `⏳ no
 deadline` note for manager ones, rather than leaving it blank.
 
+## Auth token caching
+
+Login is expensive (Kickbase rate-limits it), so `KickbaseClient` caches
+the JWT to `~/.cache/kickbase/token.json` and reuses it across runs -
+including across GitHub Actions runs, via `actions/cache` on
+`~/.cache/kickbase` in every scheduled workflow. Two real outages have
+come from this cache, both silent (the script just started failing every
+run, with no obvious link back to a caching decision):
+
+1. **Missing `user_id`.** `restore-keys` fell back to a `token.json`
+   written by a commit from before `_save_cached_token()` persisted
+   `user_id` at all - the token was still valid, so nothing ever forced a
+   fresh login to backfill it, and every manager-transfer call went to
+   `.../managers/None/transfer`. Fixed: `_load_cached_token()` now treats
+   a missing `user_id` as a cache miss, same as a missing token.
+2. **Expired token, wrong status code.** A genuinely expired token gets
+   **403** from this API, not 401 - confirmed live by decoding a cached
+   token past its own `exp` claim and hitting a real endpoint with it.
+   `_get()`/`_post()` only retried-with-fresh-login on 401, so once a
+   cached token actually expired, every workflow sharing that GitHub
+   Actions cache failed identically and permanently (403 forever, no
+   re-login ever triggered) until someone noticed and fixed the code -
+   the cache doesn't self-heal by expiring, since nothing in it carries a
+   TTL. Fixed: both methods now retry-with-fresh-login on 401 *or* 403.
+
+Moral for future changes here: this cache has no expiry of its own and no
+validation beyond "does it look like a token." Any assumption this client
+makes about what a cached entry contains, or what HTTP status means "this
+token is no longer good," has to be enforced explicitly - the API will
+not fail loudly in a way the old code was watching for.
+
 ## Endpoints used
 
 | Purpose | Endpoint |
