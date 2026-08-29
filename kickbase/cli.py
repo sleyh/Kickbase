@@ -15,6 +15,8 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import requests
+
 from . import achievements, predict, report, strategy, telegram
 from .client import KickbaseClient, KickbaseError
 
@@ -826,6 +828,74 @@ def cmd_collect_bonus(args: argparse.Namespace) -> None:
         print("(sent to Telegram)")
 
 
+def _health_state_path() -> Path:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    return STATE_DIR / "health_status.json"
+
+
+def cmd_healthcheck(args: argparse.Namespace) -> None:
+    """Pings the Kickbase API (login + one cheap authenticated call) and
+    reports via Telegram only on a state CHANGE (up->down or down->up),
+    diffed against the last recorded status in health_status.json - a
+    flat heartbeat every 5 minutes would be Telegram spam, only
+    transitions are actually worth a message. Meant for a tight cron
+    (see .github/workflows/health-check.yml) that catches real outages
+    like the 2026-08-29 one where login itself returned 503 and squad
+    fetches returned an empty 403 - both genuine upstream failures, not
+    a bug in this client (confirmed by retrying fresh minutes later and
+    getting a clean 200).
+
+    Every exception the login/API call could plausibly raise is caught
+    here deliberately, not just KickbaseError - a raw network failure
+    (DNS, timeout, connection reset) is just as much "the API is down"
+    from this script's perspective, and letting it propagate would skip
+    recording state entirely instead of reporting the outage.
+    """
+    email, password = _load_credentials(args)
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if args.telegram and not (token and chat_id):
+        sys.exit("--telegram needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID set.")
+
+    status_path = _health_state_path()
+    previous = None
+    if status_path.exists():
+        try:
+            previous = json.loads(status_path.read_text()).get("status")
+        except (json.JSONDecodeError, OSError):
+            previous = None
+
+    detail = ""
+    try:
+        client = KickbaseClient(email, password)
+        client.login()
+        league_id = _resolve_league_id(client, args)
+        client.get_budget(league_id)
+        current = "up"
+    except (KickbaseError, requests.exceptions.RequestException) as exc:
+        current = "down"
+        detail = str(exc)[:300]
+
+    now = datetime.now(timezone.utc).isoformat()
+    print(f"[{now}] Kickbase API status: {current}" + (f" ({detail})" if detail else ""))
+    status_path.write_text(json.dumps({"status": current, "checked_at": now}))
+
+    if previous is None:
+        print("No previous state recorded - establishing baseline, not sending an alert.")
+        return
+    if previous == current:
+        return
+
+    print(f"State changed: {previous} -> {current}")
+    if current == "down":
+        text = "🔴 <b>Kickbase API is down</b>" + (f"\n{detail}" if detail else "")
+    else:
+        text = "🟢 <b>Kickbase API is back up</b>"
+    if args.telegram:
+        telegram.send_message(token, chat_id, text)
+        print("(sent to Telegram)")
+
+
 def cmd_bot(args: argparse.Namespace) -> None:
     email, password = _load_credentials(args)
     client = KickbaseClient(email, password)
@@ -1092,6 +1162,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Push a message when something was collected (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
     )
     collect_bonus_parser.set_defaults(func=cmd_collect_bonus)
+
+    healthcheck_parser = subparsers.add_parser(
+        "healthcheck", help="Ping the Kickbase API; alert only on up<->down state changes"
+    )
+    healthcheck_parser.add_argument(
+        "--telegram", action="store_true",
+        help="Push a message on a state change (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)"
+    )
+    healthcheck_parser.set_defaults(func=cmd_healthcheck)
 
     return parser
 

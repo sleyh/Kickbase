@@ -1,0 +1,36 @@
+name: Kickbase API health check
+
+# Every 5 minutes: pings the API and alerts on Telegram only when the
+# status actually changes (up->down or down->up) - see
+# kickbase.cli.cmd_healthcheck for why a flat heartbeat isn't sent every
+# run. Born from a real incident (2026-08-29): login itself returned 503
+# and squad fetches returned an empty 403 for several minutes, with no
+# way to know from the daily/hourly workflows alone whether that was a
+# code bug or an upstream outage.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/kickbase
+          key: kickbase-state-${{ github.run_id }}
+          restore-keys: kickbase-state-
+      - name: Ping Kickbase API
+        env:
+          KICKBASE_EMAIL: ${{ secrets.KICKBASE_EMAIL }}
+          KICKBASE_PASSWORD: ${{ secrets.KICKBASE_PASSWORD }}
+          KICKBASE_LEAGUE_ID: ${{ secrets.KICKBASE_LEAGUE_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m kickbase.cli healthcheck --telegram

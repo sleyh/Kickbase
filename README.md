@@ -177,6 +177,23 @@ call covers every league on the account - but the command still reports
 only for the resolved league by default (`--all-leagues` for everything),
 matching every other command's default scope.
 
+## API health check
+
+`healthcheck` pings the API (a login + one cheap authenticated call) every
+5 minutes (`health-check.yml`) and pushes a Telegram message only when the
+status actually *changes* - up-to-down or down-to-up - diffed against the
+last recorded status in `~/.cache/kickbase/health_status.json`. A flat
+heartbeat every 5 minutes would be spam; only transitions matter. Built
+after a real incident (2026-08-29) where `login()` itself returned a
+plain-text 503 and squad fetches returned an empty-body 403 for several
+minutes, with nothing distinguishing "upstream outage" from "something in
+this client just broke" until someone manually retried a few minutes
+later and got a clean 200. Catches both `KickbaseError` and
+`requests.exceptions.RequestException` - a raw network failure (DNS,
+timeout, connection reset) is just as much "the API is down" as an HTTP
+error status, and letting it propagate unhandled would skip recording
+state entirely instead of reporting the outage.
+
 ## Daily squad value update
 
 `squad-value` is a separate daily recap from `brief` - not advice, just
