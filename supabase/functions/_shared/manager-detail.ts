@@ -63,7 +63,6 @@ export async function buildManagerDetail(
   const rankIndex = managers.findIndex((m) => m.i === managerId);
   const manager = rankIndex >= 0 ? managers[rankIndex] : null;
   const name = manager?.n ?? "?";
-  const joinDt = manager?.jd;
 
   const squadResponse = await client.getManagerSquad(leagueId, managerId);
   const squad: any[] = squadResponse.it ?? [];
@@ -74,14 +73,7 @@ export async function buildManagerDetail(
 
   const log = await allManagerTransfers(client, leagueId, managerId);
 
-  let estimatedBudget: number | null = null;
-  if (joinDt) {
-    try {
-      estimatedBudget = await estimateManagerBudget(client, leagueId, joinDt, squad, log);
-    } catch {
-      // Leave null - a failed reconstruction shouldn't fail the whole page.
-    }
-  }
+  const estimatedBudget = estimateManagerBudget(squad, log);
 
   let dashboard: ManagerDetailReport["dashboard"] = null;
   try {

@@ -29,25 +29,12 @@ function dayIndex(dtStr: string): number {
 }
 
 /**
- * Epoch day index to value a manager's starting-allocation squad at: the
- * day *before* they joined if they joined before the daily value update
- * fires that day, otherwise the join day itself.
- */
-function referenceDayForJoin(joinDt: string): number {
-  const dt = new Date(joinDt);
-  const day = dayIndex(joinDt);
-  return dt.getUTCHours() < UPDATE_CUTOFF_HOUR_UTC ? day - 1 : day;
-}
-
-/**
  * Epoch day index of the *first* daily update this purchase was already
- * in place for. Mirror image of referenceDayForJoin(), not the same
- * function - a join asks "which close price was my squad valued at"
- * (shifts back a day pre-cutoff), a purchase asks "which update already
- * reflects my ownership" (does not shift pre-cutoff - the imminent
- * update is the first one that does). Conflating the two was a real bug,
- * caught live: a player bought pre-cutoff the same day an update fired
- * was wrongly excluded from that day's attributed gain.
+ * in place for - a purchase asks "which update already reflects my
+ * ownership", which does not shift pre-cutoff (the imminent update is
+ * the first one that does). A player bought pre-cutoff the same day an
+ * update fired was once wrongly excluded from that day's attributed
+ * gain - caught live, this is the fix.
  */
 function firstUpdateDayAfterBuy(buyDt: string): number {
   const dt = new Date(buyDt);
@@ -166,36 +153,31 @@ export async function allManagerTransfers(
 
 /**
  * Reconstructs a manager's current budget: the fixed 150M starting
- * budget, minus their starting-allocation squad's value, minus
- * everything they've ever bought, plus everything they've ever sold. See
- * the module docstring for the achievement-reward scope cut vs. the
- * Python original.
+ * allocation, minus whatever of it is still tied up in starting-squad
+ * players they've never sold, minus everything they've ever bought, plus
+ * everything they've ever sold. See the module docstring for the
+ * achievement-reward scope cut vs. the Python original.
+ *
+ * Previously anchored the starting squad's value to the day the manager
+ * joined (`jd` on getRanking()'s response). Confirmed live that field no
+ * longer exists on that endpoint at all - every field a real league's
+ * ranking response actually carries (i, n, adm, sp, mdp, shp, tv, spl,
+ * mdpl, pa, lp, lipc, ppc, uim, hhsp, hll) was checked, none is a date -
+ * so estimatedBudget was silently coming back null for every competitor.
+ * Uses each still-held starting player's *current* market value instead:
+ * a rougher approximation (their value has moved since they joined) but
+ * the only one still computable, and consistent with the "≈, likely
+ * imprecise" framing already shown in the UI. A starting player who's
+ * since been sold can't be valued at the (now unknowable) join date
+ * either, so their original allocation isn't subtracted - a small,
+ * one-directional overestimate for managers who've flipped a starting
+ * player, and the trade-off for this no longer needing a join date, or
+ * any extra API calls, at all.
  */
-export async function estimateManagerBudget(
-  client: KickbaseClient,
-  leagueId: string,
-  joinDt: string,
-  squadItems: any[],
-  log: any[]
-): Promise<number> {
+export function estimateManagerBudget(squadItems: any[], log: any[]): number {
   const boughtIdsEver = new Set(log.filter((t) => t.tty === 1).map((t) => t.pi));
-  const currentIds = new Set(squadItems.map((p) => p.i));
-  const soldIds = new Set(log.filter((t) => t.tty === 2).map((t) => t.pi));
-  const startingIds = [...new Set([...currentIds, ...soldIds])].filter((id) => !boughtIdsEver.has(id));
-
-  const referenceDay = referenceDayForJoin(joinDt);
-  let startingCost = 0;
-  await Promise.all(
-    startingIds.map(async (playerId) => {
-      try {
-        const history = await client.getMarketValueHistory(leagueId, playerId as string);
-        const entry = (history.it ?? []).find((e: any) => e.dt === referenceDay);
-        startingCost += entry?.mv ?? 0;
-      } catch (err) {
-        if (!(err instanceof KickbaseError)) throw err;
-      }
-    })
-  );
+  const stillHeldStartingAllocation = squadItems.filter((p) => !boughtIdsEver.has(p.i));
+  const startingCost = stillHeldStartingAllocation.reduce((sum, p) => sum + (p.mv ?? 0), 0);
 
   const totalBought = log.filter((t) => t.tty === 1).reduce((sum, t) => sum + (t.trp ?? 0), 0);
   const totalSold = log.filter((t) => t.tty === 2).reduce((sum, t) => sum + (t.trp ?? 0), 0);
@@ -254,15 +236,7 @@ export async function fetchCompetitors(
       const attributable = squad.filter((p) => p.d1 != null && isDeltaAttributable(p, log));
       const totalDelta = attributable.length > 0 ? attributable.reduce((sum, p) => sum + p.d1, 0) : null;
 
-      let estimatedBudget: number | null = null;
-      const joinDt = manager.jd;
-      if (joinDt) {
-        try {
-          estimatedBudget = await estimateManagerBudget(client, leagueId, joinDt, squad, log);
-        } catch {
-          // Leave null - one manager's estimate failing shouldn't drop them entirely.
-        }
-      }
+      const estimatedBudget = estimateManagerBudget(squad, log);
 
       competitors.push({ id: managerId, name: managerName, totalValue, totalDelta, estimatedBudget, photo });
     })
