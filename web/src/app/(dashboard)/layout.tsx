@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { Topbar } from "@/components/layout/topbar";
+import { CommandPalette } from "@/components/layout/command-palette";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -40,9 +41,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <SidebarNav isAdmin={profile?.is_admin ?? false} />
       </aside>
       <div className="flex min-h-screen flex-1 flex-col">
-        <Topbar email={user.email ?? ""} />
+        <Topbar email={user.email ?? ""} isAdmin={profile?.is_admin ?? false} />
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
+      <CommandPalette isAdmin={profile?.is_admin ?? false} />
     </div>
   );
 }

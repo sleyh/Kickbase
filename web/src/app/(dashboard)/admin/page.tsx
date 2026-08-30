@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
+import { RealtimeRefresher } from "@/components/realtime-refresher";
 import type { AdminUserRow, JobRunRow, ScheduledJobRow } from "@/lib/types";
 
 /**
@@ -69,5 +70,12 @@ export default async function AdminPage() {
     lastStatus: j.last_status,
   }));
 
-  return <AdminDashboard users={users} jobRuns={runs} scheduledJobs={jobs} />;
+  return (
+    <>
+      {/* No filterUserId: an admin is allowed (via RLS) to see every
+          user's job_runs, so this refreshes on anyone's job finishing. */}
+      <RealtimeRefresher tables={["job_runs", "reports_cache"]} />
+      <AdminDashboard users={users} jobRuns={runs} scheduledJobs={jobs} />
+    </>
+  );
 }

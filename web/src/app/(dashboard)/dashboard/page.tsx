@@ -5,6 +5,7 @@ import { compact, signed } from "@/lib/format";
 import type { SquadValueReport, BonusReport } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BonusCard } from "@/components/reports/bonus-card";
+import { RealtimeRefresher } from "@/components/realtime-refresher";
 
 const SHORTCUTS = [
   { href: "/dashboard/squad-value", label: "Squad Value", icon: TrendingUp, description: "Daily value + competitors" },
@@ -38,6 +39,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <RealtimeRefresher tables={["reports_cache"]} filterUserId={user!.id} />
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
         <p className="text-muted-foreground">
