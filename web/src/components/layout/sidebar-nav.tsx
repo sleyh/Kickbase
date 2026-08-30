@@ -38,6 +38,12 @@ export function SidebarNav({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <nav className="flex flex-col gap-1 p-3">
+      <Link
+        href="/legal"
+        className="px-3 pb-2 text-xs text-muted-foreground/70 hover:text-muted-foreground"
+      >
+        Legal &amp; Disclaimer
+      </Link>
       {items.map((item) => {
         const active = pathname === item.href;
         return (

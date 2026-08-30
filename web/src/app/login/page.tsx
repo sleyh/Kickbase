@@ -11,6 +11,9 @@ export default function LoginPage() {
           Sign up
         </Link>
       </p>
+      <Link href="/legal" className="text-xs text-muted-foreground underline underline-offset-4">
+        Legal &amp; Disclaimer
+      </Link>
     </div>
   );
 }
