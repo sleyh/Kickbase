@@ -43,6 +43,13 @@ export interface MarketListingSummary {
   teamId: string | null;
   teamName: string | null;
   teamCrest: string | null;
+  /**
+   * The manager currently selling this player, if any - manager-listed
+   * items carry a "u" object ({i, n, ...}, confirmed via kickbase/report.py's
+   * seller_name()); computer-generated listings never have that field at
+   * all. null here means "on the computer market", not "unknown".
+   */
+  owner: { id: string; name: string; photo: string | null } | null;
 }
 
 export interface MarketSnapshot {
@@ -61,6 +68,12 @@ function trendOf(item: any): "up" | "down" | "flat" {
   if (item.mvt === RISING) return "up";
   if (item.mvt === FALLING) return "down";
   return "flat";
+}
+
+function ownerOf(item: any): { id: string; name: string; photo: string | null } | null {
+  const seller = item.u;
+  if (!seller) return null;
+  return { id: seller.i, name: seller.n ?? "?", photo: seller.im ?? seller.pim ?? seller.uim ?? null };
 }
 
 function baseListingSummary(item: any, team?: { tid: string; name: string; crest: string | null }): MarketListingSummary {
@@ -82,6 +95,7 @@ function baseListingSummary(item: any, team?: { tid: string; name: string; crest
     teamId: team?.tid ?? item.tid ?? null,
     teamName: team?.name ?? null,
     teamCrest: team?.crest ?? null,
+    owner: ownerOf(item),
   };
 }
 

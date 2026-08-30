@@ -123,7 +123,19 @@ export function MarketView() {
     const list = [...source];
     const { key, direction } = sort;
     list.sort((a, b) => {
-      const cmp = key === "name" ? a.name.localeCompare(b.name) : (a[key] ?? -Infinity) - (b[key] ?? -Infinity);
+      if (key === "name") {
+        const cmp = a.name.localeCompare(b.name);
+        return direction === "asc" ? cmp : -cmp;
+      }
+      if (key === "expiresInSeconds") {
+        // No deadline (computer-market listings) always sort last, regardless of sort direction.
+        if (a.expiresInSeconds == null && b.expiresInSeconds == null) return 0;
+        if (a.expiresInSeconds == null) return 1;
+        if (b.expiresInSeconds == null) return -1;
+        const cmp = a.expiresInSeconds - b.expiresInSeconds;
+        return direction === "asc" ? cmp : -cmp;
+      }
+      const cmp = (a[key] ?? -Infinity) - (b[key] ?? -Infinity);
       return direction === "asc" ? cmp : -cmp;
     });
     return list;
@@ -179,6 +191,7 @@ export function MarketView() {
         player={{ name: p.name, photo: p.photo, pos: p.pos, team: p.teamName, value: p.price }}
         caption={`${p.avgPoints} avg pts`}
         href={p.id ? `/dashboard/player/${p.id}` : undefined}
+        owner={p.owner}
         badge={
           p.hasOwnBid ? (
             <Badge variant="secondary" className="text-[10px]">

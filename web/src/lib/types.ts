@@ -107,6 +107,7 @@ export interface MarketListingSummary {
   teamId?: string | null;
   teamName?: string | null;
   teamCrest?: string | null;
+  owner?: { id: string; name: string; photo: string | null } | null;
 }
 
 export interface MarketSnapshot {

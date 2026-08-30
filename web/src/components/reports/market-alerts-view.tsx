@@ -128,6 +128,7 @@ export function MarketAlertsView({
                     player={{ name: p.name, photo: p.photo, pos: p.pos, value: p.price }}
                     href={p.id ? `/dashboard/player/${p.id}` : undefined}
                     caption={`${p.avgPoints} avg pts`}
+                    owner={p.owner}
                     badge={
                       <div className="flex items-center gap-1">
                         {p.rising && <TrendingUp className="size-3.5 text-green-600 dark:text-green-400" />}

@@ -35,6 +35,7 @@ export function PlayerCard({
   href,
   menu,
   extra,
+  owner,
   className,
 }: {
   player: PlayerCardData;
@@ -50,6 +51,8 @@ export function PlayerCard({
   menu?: ReactNode;
   /** Full variant only - a footer block below the value/delta/sparkline row, for page-specific extra stats (mirrors ManagerCard's `extra`). */
   extra?: ReactNode;
+  /** Full variant only - the manager currently holding/selling this player. Renders a small avatar in the top-left corner; omit or pass null/undefined to show nothing (e.g. a computer-market listing with no manager owner). */
+  owner?: { name: string; photo?: string | null } | null;
   className?: string;
 }) {
   const stopNavigation = (e: MouseEvent) => {
@@ -118,6 +121,11 @@ export function PlayerCard({
           {menu && (
             <div onClick={stopNavigation} className="absolute top-2 right-2 z-10">
               {menu}
+            </div>
+          )}
+          {owner && (
+            <div className="absolute top-2 left-2 z-10" title={`Listed by ${owner.name}`}>
+              <PlayerAvatar name={owner.name} photo={owner.photo} size="sm" className="size-5 border" />
             </div>
           )}
           <span
