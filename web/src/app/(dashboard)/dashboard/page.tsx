@@ -110,6 +110,7 @@ export default async function DashboardPage() {
                   delta: biggestMover.d1,
                   sparkline: biggestMover.sparkline,
                 }}
+                caption={biggestMover.points != null ? `${biggestMover.points} pts` : undefined}
               />
             </div>
           )}

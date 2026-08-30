@@ -175,6 +175,7 @@ export function SquadValueView({
                     delta: p.d1,
                     sparkline: p.sparkline,
                   }}
+                  caption={p.points != null ? `${p.points} pts` : undefined}
                   badge={
                     !p.attributable && (
                       <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
