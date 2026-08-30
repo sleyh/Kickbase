@@ -11,6 +11,7 @@
 import { KickbaseClient, KickbaseError } from "./kickbase-client.ts";
 
 export interface SpendingEntry {
+  playerId: string;
   playerName: string;
   trp: number;
   mv: number;
@@ -19,6 +20,7 @@ export interface SpendingEntry {
 }
 
 export interface SpendingProfile {
+  id: string;
   name: string;
   computerBuys: SpendingEntry[];
   managerBuys: SpendingEntry[];
@@ -64,7 +66,13 @@ export async function buildSpendingProfiles(
       const trp = t.trp;
       const mv = await currentMv(t.pi);
       if (!trp || !mv) continue;
-      const entry: SpendingEntry = { playerName: t.pn, trp, mv, premiumPct: ((trp - mv) / mv) * 100 };
+      const entry: SpendingEntry = {
+        playerId: t.pi,
+        playerName: t.pn,
+        trp,
+        mv,
+        premiumPct: ((trp - mv) / mv) * 100,
+      };
       if (t.othnm) {
         entry.othnm = t.othnm;
         managerBuys.push(entry);
@@ -72,7 +80,7 @@ export async function buildSpendingProfiles(
         computerBuys.push(entry);
       }
     }
-    profiles.push({ name, computerBuys, managerBuys });
+    profiles.push({ id: managerId, name, computerBuys, managerBuys });
   }
   return profiles;
 }

@@ -96,6 +96,7 @@ export function LiveMatchdayView() {
                     variant="compact"
                     animateValue
                     manager={{ name: s.name, photo: s.photo, isYou: s.isYou, rank: i + 1, value: s.points }}
+                    href={s.id ? `/dashboard/manager/${s.id}` : undefined}
                   />
                 </motion.div>
               ))}
@@ -129,6 +130,7 @@ export function LiveMatchdayView() {
                     variant="compact"
                     animateValue
                     player={{ name: p.name, photo: p.photo, team: p.team, points: p.points }}
+                    href={p.id ? `/dashboard/player/${p.id}` : undefined}
                   />
                 </motion.div>
               ))}

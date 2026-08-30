@@ -1,25 +1,24 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
 import { getAuthContext, isAuthContextError } from "../_shared/auth-context.ts";
-import { buildLiveMatchdayReport } from "../_shared/live-matchday.ts";
+import { buildPlayerDetail } from "../_shared/player-detail.ts";
 import { KickbaseError } from "../_shared/kickbase-client.ts";
 
-/**
- * Always fetched fresh, unlike run-report's report types - live matchday
- * data is only meaningful in the moment, so there's no reports_cache row
- * or job_runs history for this one, just load-on-view from the
- * dashboard's Live Matchday page.
- */
+/** Not cached - fetched fresh when a PlayerCard is clicked, same reasoning as live-matchday. */
 export default {
-  fetch: withSupabase({ auth: "user" }, async (_req, ctx) => {
+  fetch: withSupabase({ auth: "user" }, async (req, ctx) => {
+    const body = await req.json().catch(() => ({}));
+    const id: string | undefined = body?.id;
+    if (!id) return Response.json({ error: "id is required." }, { status: 400 });
+
     const ctxResult = await getAuthContext(ctx.supabaseAdmin, ctx.userClaims!.id);
     if (isAuthContextError(ctxResult)) {
       return Response.json({ error: ctxResult.error }, { status: ctxResult.status });
     }
-    const { client, leagueId, leagueName } = ctxResult;
+    const { client, leagueId } = ctxResult;
 
     try {
-      const report = await buildLiveMatchdayReport(client, leagueId, leagueName);
+      const report = await buildPlayerDetail(client, leagueId, id);
       return Response.json(report);
     } catch (err) {
       const message = err instanceof KickbaseError ? err.message : String(err);

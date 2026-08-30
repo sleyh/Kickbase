@@ -102,6 +102,7 @@ export function CompetitorsView({
           <ManagerCard
             key={c.name}
             manager={{ name: c.name, photo: c.photo, value: c.totalValue, delta: c.totalDelta }}
+            href={c.id ? `/dashboard/manager/${c.id}` : undefined}
             extra={
               c.estimatedBudget != null ? (
                 <div className="border-t px-4 py-2 text-xs text-muted-foreground">

@@ -175,6 +175,7 @@ export function SquadValueView({
                     delta: p.d1,
                     sparkline: p.sparkline,
                   }}
+                  href={p.id ? `/dashboard/player/${p.id}` : undefined}
                   caption={p.points != null ? `${p.points} pts` : undefined}
                   badge={
                     !p.attributable && (
@@ -213,6 +214,7 @@ export function SquadValueView({
                 <ManagerCard
                   key={c.name}
                   manager={{ name: c.name, photo: c.photo, value: c.totalValue, delta: c.totalDelta }}
+                  href={c.id ? `/dashboard/manager/${c.id}` : undefined}
                 />
               ))}
             </div>

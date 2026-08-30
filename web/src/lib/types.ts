@@ -7,6 +7,7 @@
  * presence (same reasoning as normalizeSquadValueReport() below).
  */
 export interface CompetitorSummary {
+  id?: string;
   name: string;
   totalValue: number;
   totalDelta: number | null;
@@ -26,6 +27,7 @@ export interface SquadValueReport {
   netWorth: number;
   totalDelta: number;
   players: Array<{
+    id?: string;
     name: string;
     value?: number;
     d1: number;
@@ -59,6 +61,7 @@ export const DEBT_CEILING_RATIO = 0.33;
 
 /** Mirrors supabase/functions/_shared/transfer-analysis.ts's SpendingProfile. */
 export interface SpendingEntry {
+  playerId?: string;
   playerName: string;
   trp: number;
   mv: number;
@@ -67,6 +70,7 @@ export interface SpendingEntry {
 }
 
 export interface SpendingProfile {
+  id?: string;
   name: string;
   computerBuys: SpendingEntry[];
   managerBuys: SpendingEntry[];
@@ -86,6 +90,7 @@ export interface BonusReport {
 
 /** Mirrors supabase/functions/_shared/market.ts's MarketSnapshot. */
 export interface MarketListingSummary {
+  id?: string;
   name: string;
   price: number;
   marketValue: number;
@@ -116,10 +121,11 @@ export interface LiveMatchGroup {
   minute: string;
   status: number;
   isLive: boolean;
-  players: Array<{ name: string; points: number; team: string; photo?: string | null }>;
+  players: Array<{ id?: string; name: string; points: number; team: string; photo?: string | null }>;
 }
 
 export interface LiveStandingEntry {
+  id?: string;
   name: string;
   points: number;
   isYou: boolean;
@@ -186,4 +192,73 @@ export interface AdminHealthReport {
   telegram: HealthCheckResult;
   database: HealthCheckResult;
   checkedAt: string;
+}
+
+/** Mirrors supabase/functions/_shared/manager-detail.ts's ManagerDetailReport - not cached, so no stale-shape concern (unlike the report types above). */
+export interface ManagerDetailReport {
+  id: string;
+  name: string;
+  photo: string | null;
+  isYou: boolean;
+  rank: number | null;
+  squadValue: number;
+  estimatedBudget: number | null;
+  dashboard: {
+    teamValue: number | null;
+    profit: number | null;
+    avgPoints: number | null;
+    matchdayWins: number | null;
+  } | null;
+  seasonTotalPoints: number | null;
+  performance: Array<{ day: number; points: number; won: boolean }>;
+  transfers: Array<{
+    playerName: string;
+    type: "buy" | "sell";
+    amount: number;
+    date: string;
+    counterparty: string | null;
+  }>;
+  squad: Array<{
+    id: string;
+    name: string;
+    photo: string | null;
+    pos: number | null;
+    value: number;
+    d1: number | null;
+  }>;
+}
+
+/** Mirrors supabase/functions/_shared/player-detail.ts's PlayerDetailReport. */
+export interface PlayerDetailReport {
+  id: string;
+  name: string;
+  photo: string | null;
+  pos: number | null;
+  team: { id: string; name: string } | null;
+  value: number | null;
+  points: number | null;
+  history: Array<{ day: number; value: number }>;
+  upcomingFixtures: Array<{ opponentId: string; opponentName: string; opponentStrength: number; date: string }>;
+  ownership: { boughtPrice: number; boughtDate: string } | null;
+}
+
+/** Mirrors supabase/functions/_shared/team-detail.ts's TeamDetailReport. */
+export interface TeamFixture {
+  matchId: string;
+  opponentId: string;
+  opponentName: string;
+  opponentStrength: number;
+  date: string;
+  home: boolean;
+  ownGoals: number | null;
+  opponentGoals: number | null;
+}
+
+export interface TeamDetailReport {
+  id: string;
+  name: string;
+  rank: number | null;
+  strength: number | null;
+  recentMatches: TeamFixture[];
+  upcomingMatches: TeamFixture[];
 }

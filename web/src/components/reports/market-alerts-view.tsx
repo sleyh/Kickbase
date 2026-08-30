@@ -80,6 +80,7 @@ export function MarketAlertsView({
                 key={p.name}
                 variant="compact"
                 player={{ name: p.name, photo: p.photo, pos: p.pos, value: p.ownBidAmount }}
+                href={p.id ? `/dashboard/player/${p.id}` : undefined}
               />
             ))}
           </CardContent>
@@ -99,6 +100,7 @@ export function MarketAlertsView({
                 <motion.div key={p.name} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
                   <PlayerCard
                     player={{ name: p.name, photo: p.photo, pos: p.pos, value: p.price }}
+                    href={p.id ? `/dashboard/player/${p.id}` : undefined}
                     caption={`${p.avgPoints} avg pts`}
                     badge={
                       <div className="flex items-center gap-1">

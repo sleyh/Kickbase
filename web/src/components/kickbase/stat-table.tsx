@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PlayerAvatar } from "@/components/kickbase/player-avatar";
 import { TableCell } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
@@ -14,20 +15,31 @@ export function PlayerCell({
   photo,
   pos,
   subtitle,
+  href,
   className,
 }: {
   name: string;
   photo?: string | null;
   pos?: number | null;
   subtitle?: string | null;
+  /** When set, the name links to this route (e.g. a player/manager detail page). */
+  href?: string;
   className?: string;
 }) {
+  const nameEl = href ? (
+    <Link href={href} className="truncate font-medium hover:underline">
+      {name}
+    </Link>
+  ) : (
+    <div className="truncate font-medium">{name}</div>
+  );
+
   return (
     <TableCell className={cn("whitespace-nowrap", className)}>
       <div className="flex items-center gap-2">
         <PlayerAvatar name={name} photo={photo} pos={pos} size="sm" />
         <div className="min-w-0">
-          <div className="truncate font-medium">{name}</div>
+          {nameEl}
           {subtitle && <div className="truncate text-xs text-muted-foreground">{subtitle}</div>}
         </div>
       </div>

@@ -495,3 +495,23 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/admin-health/deno.json"
 entrypoint = "./functions/admin-health/index.ts"
+
+[functions.player-detail]
+enabled = true
+# auth: 'user' in index.ts needs a real JWT, same reasoning as
+# test-kickbase-login above.
+verify_jwt = true
+import_map = "./functions/player-detail/deno.json"
+entrypoint = "./functions/player-detail/index.ts"
+
+[functions.team-detail]
+enabled = true
+verify_jwt = true
+import_map = "./functions/team-detail/deno.json"
+entrypoint = "./functions/team-detail/index.ts"
+
+[functions.manager-detail]
+enabled = true
+verify_jwt = true
+import_map = "./functions/manager-detail/deno.json"
+entrypoint = "./functions/manager-detail/index.ts"

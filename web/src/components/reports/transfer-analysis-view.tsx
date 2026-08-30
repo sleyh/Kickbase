@@ -114,6 +114,7 @@ export function TransferAnalysisView({
                   manager={{ name: profile.name, value: buys.length }}
                   statSuffix={` buy${buys.length !== 1 ? "s" : ""}`}
                   badge={<SpendingBadge avgPct={avg} />}
+                  href={profile.id ? `/dashboard/manager/${profile.id}` : undefined}
                 />
               );
             })}
@@ -141,7 +142,11 @@ export function TransferAnalysisView({
               <TableBody>
                 {managerTrades.map(({ name, b }, i) => (
                   <TableRow key={i}>
-                    <PlayerCell name={b.playerName} subtitle={`bought by ${name}`} />
+                    <PlayerCell
+                      name={b.playerName}
+                      subtitle={`bought by ${name}`}
+                      href={b.playerId ? `/dashboard/player/${b.playerId}` : undefined}
+                    />
                     <TableCell className="text-muted-foreground">{b.othnm}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{compact(b.trp)}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums text-muted-foreground">

@@ -141,7 +141,12 @@ export function SquadRosterView({
             <TableBody>
               {rows.map((p) => (
                 <TableRow key={p.name}>
-                  <PlayerCell name={p.name} photo={p.photo} pos={p.pos} />
+                  <PlayerCell
+                    name={p.name}
+                    photo={p.photo}
+                    pos={p.pos}
+                    href={p.id ? `/dashboard/player/${p.id}` : undefined}
+                  />
                   <TableCell className="text-right font-mono tabular-nums">{compact(p.value ?? 0)}</TableCell>
                   <TableCell className={`text-right font-mono tabular-nums ${deltaClass(p.d1)}`}>
                     {signed(p.d1)}

@@ -34,10 +34,11 @@ export interface LiveMatchGroup {
   minute: string;
   status: number;
   isLive: boolean;
-  players: Array<{ name: string; points: number; team: string; photo: string | null }>;
+  players: Array<{ id: string; name: string; points: number; team: string; photo: string | null }>;
 }
 
 export interface LiveStandingEntry {
+  id: string;
   name: string;
   points: number;
   isYou: boolean;
@@ -94,6 +95,7 @@ export async function buildLiveMatchdayReport(
         });
       }
       groups.get(key)!.players.push({
+        id: p.i,
         name: p.n,
         points: p.p ?? 0,
         team: teamNames.get(p.tid) ?? p.tid,
@@ -107,7 +109,13 @@ export async function buildLiveMatchdayReport(
   if (day != null) {
     const teamcenter = await client.getUserTeamcenter(leagueId, client.userId!, day);
     for (const u of teamcenter.us ?? []) {
-      standings.push({ name: u.unm, points: u.mdp ?? 0, isYou: u.i === client.userId, photo: u.uim ?? null });
+      standings.push({
+        id: u.i,
+        name: u.unm,
+        points: u.mdp ?? 0,
+        isYou: u.i === client.userId,
+        photo: u.uim ?? null,
+      });
     }
     standings.sort((a, b) => b.points - a.points);
   }

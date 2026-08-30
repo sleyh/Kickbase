@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { PlayerAvatar } from "@/components/kickbase/player-avatar";
 import { Sparkline } from "@/components/kickbase/sparkline";
 import { AnimatedNumber } from "@/components/motion/animated-number";
@@ -29,6 +30,7 @@ export function PlayerCard({
   badge,
   caption,
   animateValue = false,
+  href,
   className,
 }: {
   player: PlayerCardData;
@@ -38,6 +40,8 @@ export function PlayerCard({
   caption?: ReactNode;
   /** Tween the primary stat on change instead of snapping - for a value that updates live (e.g. live matchday points). */
   animateValue?: boolean;
+  /** When set, the whole card links to this route (e.g. a player detail page) - omit to keep it non-interactive. */
+  href?: string;
   className?: string;
 }) {
   const primaryStat =
@@ -47,8 +51,8 @@ export function PlayerCard({
       compact(player.value)
     ) : null;
 
-  if (variant === "compact") {
-    return (
+  const body =
+    variant === "compact" ? (
       <div
         className={cn(
           "flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors hover:bg-muted/50",
@@ -81,61 +85,66 @@ export function PlayerCard({
           )}
         </div>
       </div>
-    );
-  }
-
-  const color = positionColor(player.pos);
-
-  return (
-    <div
-      className={cn(
-        "group/player-card relative flex flex-col overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 transition-transform hover:-translate-y-0.5 hover:shadow-lg",
-        className
-      )}
-    >
+    ) : (
       <div
-        className="flex flex-col items-center gap-2 px-4 pt-5 pb-4"
-        style={{ background: `linear-gradient(180deg, color-mix(in oklch, ${color} 18%, transparent), transparent)` }}
-      >
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase"
-          style={{ backgroundColor: color }}
-        >
-          {positionLabel(player.pos)}
-        </span>
-        <PlayerAvatar name={player.name} photo={player.photo} pos={player.pos} size="lg" />
-        <div className="flex flex-col items-center gap-0.5 text-center">
-          <span className="font-heading font-semibold leading-tight">{player.name}</span>
-          {player.team && <span className="text-xs text-muted-foreground">{player.team}</span>}
-        </div>
-        {badge}
-      </div>
-
-      <div className="flex items-center justify-between border-t px-4 py-3">
-        <div className="flex flex-col">
-          {primaryStat != null && (
-            <span className="font-mono text-lg font-semibold tabular-nums">{primaryStat}</span>
-          )}
-          {player.delta != null && (
-            <span
-              className={cn(
-                "font-mono text-xs tabular-nums",
-                player.delta > 0
-                  ? "text-green-600 dark:text-green-400"
-                  : player.delta < 0
-                    ? "text-destructive"
-                    : "text-muted-foreground"
-              )}
-            >
-              {signed(player.delta)} today
-            </span>
-          )}
-          {caption && <span className="text-xs text-muted-foreground">{caption}</span>}
-        </div>
-        {player.sparkline && player.sparkline.length >= 2 && (
-          <Sparkline points={player.sparkline} className="h-8 w-20" />
+        className={cn(
+          "group/player-card relative flex flex-col overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 transition-transform hover:-translate-y-0.5 hover:shadow-lg",
+          className
         )}
+      >
+        <div
+          className="flex flex-col items-center gap-2 px-4 pt-5 pb-4"
+          style={{
+            background: `linear-gradient(180deg, color-mix(in oklch, ${positionColor(player.pos)} 18%, transparent), transparent)`,
+          }}
+        >
+          <span
+            className="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase"
+            style={{ backgroundColor: positionColor(player.pos) }}
+          >
+            {positionLabel(player.pos)}
+          </span>
+          <PlayerAvatar name={player.name} photo={player.photo} pos={player.pos} size="lg" />
+          <div className="flex flex-col items-center gap-0.5 text-center">
+            <span className="font-heading font-semibold leading-tight">{player.name}</span>
+            {player.team && <span className="text-xs text-muted-foreground">{player.team}</span>}
+          </div>
+          {badge}
+        </div>
+
+        <div className="flex items-center justify-between border-t px-4 py-3">
+          <div className="flex flex-col">
+            {primaryStat != null && (
+              <span className="font-mono text-lg font-semibold tabular-nums">{primaryStat}</span>
+            )}
+            {player.delta != null && (
+              <span
+                className={cn(
+                  "font-mono text-xs tabular-nums",
+                  player.delta > 0
+                    ? "text-green-600 dark:text-green-400"
+                    : player.delta < 0
+                      ? "text-destructive"
+                      : "text-muted-foreground"
+                )}
+              >
+                {signed(player.delta)} today
+              </span>
+            )}
+            {caption && <span className="text-xs text-muted-foreground">{caption}</span>}
+          </div>
+          {player.sparkline && player.sparkline.length >= 2 && (
+            <Sparkline points={player.sparkline} className="h-8 w-20" />
+          )}
+        </div>
       </div>
-    </div>
+    );
+
+  return href ? (
+    <Link href={href} className="block">
+      {body}
+    </Link>
+  ) : (
+    body
   );
 }

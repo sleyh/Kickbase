@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /**
@@ -27,12 +28,17 @@ export function TeamBadge({
   const sizeClass = size === "sm" ? "size-6 text-[9px]" : "size-8 text-[10px]";
 
   return (
-    <span
-      className={cn("inline-flex shrink-0 items-center justify-center rounded-md font-bold text-white", sizeClass, className)}
+    <Link
+      href={`/dashboard/team/${teamId}`}
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-md font-bold text-white transition-transform hover:scale-105",
+        sizeClass,
+        className
+      )}
       style={{ backgroundColor: color }}
       title={teamName}
     >
       {teamName.slice(0, 3).toUpperCase()}
-    </span>
+    </Link>
   );
 }

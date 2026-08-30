@@ -23,6 +23,7 @@ export function isNotableListing(player: any): boolean {
 }
 
 export interface MarketListingSummary {
+  id: string;
   name: string;
   price: number;
   marketValue: number;
@@ -48,6 +49,7 @@ function playerName(item: any): string {
 
 export function buildMarketSnapshot(leagueName: string, marketItems: any[]): MarketSnapshot {
   const summaries: MarketListingSummary[] = marketItems.map((item) => ({
+    id: item.i,
     name: playerName(item),
     price: item.prc ?? 0,
     marketValue: item.mv ?? 0,

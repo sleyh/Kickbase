@@ -111,6 +111,7 @@ export default async function DashboardPage() {
                   sparkline: biggestMover.sparkline,
                 }}
                 caption={biggestMover.points != null ? `${biggestMover.points} pts` : undefined}
+                href={biggestMover.id ? `/dashboard/player/${biggestMover.id}` : undefined}
               />
             </div>
           )}

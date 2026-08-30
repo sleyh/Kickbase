@@ -14,8 +14,8 @@
  */
 
 import { KickbaseClient } from "./kickbase-client.ts";
+import { fetchAllMatches, fetchLeagueTable, scheduledMatchesForTeam } from "./fixtures.ts";
 
-const BUNDESLIGA_COMPETITION_ID = "1";
 const UPCOMING_FIXTURES_TO_CONSIDER = 3;
 
 const WEIGHT_PERFORMANCE = 0.45;
@@ -37,49 +37,22 @@ function minMaxNormalize(values: number[], value: number): number {
 
 /**
  * Every Bundesliga team's average opponent strength over its next
- * UPCOMING_FIXTURES_TO_CONSIDER scheduled (not yet started) matches -
- * one pair of API calls total, not per player. Team strength itself is
- * derived from array position in the table response (a "table" endpoint
- * is inherently rank-ordered) refined by an explicit rank/points field
- * when present, so this doesn't depend on knowing an exact field name.
+ * UPCOMING_FIXTURES_TO_CONSIDER scheduled matches - one league-table
+ * fetch + one matchdays fetch total, not per player.
  */
 async function fetchUpcomingOpponentStrength(client: KickbaseClient): Promise<Map<string, number>> {
-  const [matchdaysResp, tableResp] = await Promise.all([
-    client.getCompetitionMatchdays(BUNDESLIGA_COMPETITION_ID),
-    client.getCompetitionTable(BUNDESLIGA_COMPETITION_ID),
-  ]);
-
-  const table: any[] = tableResp?.it ?? [];
-  const ranked = [...table].sort((a, b) => {
-    const aRank = a.pos ?? a.tp ?? null;
-    const bRank = b.pos ?? b.tp ?? null;
-    return aRank != null && bRank != null ? aRank - bRank : 0;
-  });
-  const teamCount = Math.max(1, ranked.length - 1);
-  const strengthByTeam = new Map<string, number>();
-  ranked.forEach((t, i) => {
-    // Rank 0 (strongest) -> strength 1, last place -> strength ~0.
-    strengthByTeam.set(t.tid, 1 - i / teamCount);
-  });
-
-  const matchdays: any[] = matchdaysResp?.it ?? [];
-  const upcoming = matchdays
-    .flatMap((d: any) => d.it ?? [])
-    .filter((m: any) => (m.st ?? 0) === 0)
-    .sort((a: any, b: any) => new Date(a.dt).getTime() - new Date(b.dt).getTime());
+  const [table, matches] = await Promise.all([fetchLeagueTable(client), fetchAllMatches(client)]);
+  const strengthByTeam = new Map(table.map((t) => [t.tid, t.strength]));
 
   const opponentStrengthByTeam = new Map<string, number>();
   for (const team of table) {
-    const teamId = team.tid;
-    const nextMatches = upcoming
-      .filter((m: any) => m.t1 === teamId || m.t2 === teamId)
-      .slice(0, UPCOMING_FIXTURES_TO_CONSIDER);
+    const nextMatches = scheduledMatchesForTeam(matches, team.tid, UPCOMING_FIXTURES_TO_CONSIDER);
     if (nextMatches.length === 0) continue;
     const strengths = nextMatches.map((m: any) => {
-      const opponentId = m.t1 === teamId ? m.t2 : m.t1;
+      const opponentId = m.t1 === team.tid ? m.t2 : m.t1;
       return strengthByTeam.get(opponentId) ?? 0.5;
     });
-    opponentStrengthByTeam.set(teamId, strengths.reduce((sum, v) => sum + v, 0) / strengths.length);
+    opponentStrengthByTeam.set(team.tid, strengths.reduce((sum, v) => sum + v, 0) / strengths.length);
   }
   return opponentStrengthByTeam;
 }

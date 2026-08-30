@@ -171,7 +171,7 @@ export async function allManagerTransfers(
  * the module docstring for the achievement-reward scope cut vs. the
  * Python original.
  */
-async function estimateManagerBudget(
+export async function estimateManagerBudget(
   client: KickbaseClient,
   leagueId: string,
   joinDt: string,
@@ -204,6 +204,7 @@ async function estimateManagerBudget(
 }
 
 export interface CompetitorSummary {
+  id: string;
   name: string;
   totalValue: number;
   totalDelta: number | null;
@@ -263,7 +264,7 @@ export async function fetchCompetitors(
         }
       }
 
-      competitors.push({ name: managerName, totalValue, totalDelta, estimatedBudget, photo });
+      competitors.push({ id: managerId, name: managerName, totalValue, totalDelta, estimatedBudget, photo });
     })
   );
 
@@ -277,6 +278,7 @@ export interface SquadValueReport {
   netWorth: number;
   totalDelta: number;
   players: Array<{
+    id: string;
     name: string;
     value: number;
     d1: number;
@@ -351,6 +353,7 @@ export async function buildSquadValueReport(
     netWorth: budget + totalValue,
     totalDelta,
     players: withDelta.map((p, i) => ({
+      id: p.i,
       name: playerName(p),
       value: p.mv ?? 0,
       d1: p.d1,
