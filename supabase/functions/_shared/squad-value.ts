@@ -1,0 +1,293 @@
+// deno-lint-ignore-file no-explicit-any
+/**
+ * TypeScript port of the squad-value data-gathering logic from
+ * kickbase/cli.py (_enrich_with_history, the day-index/attribution
+ * helpers, _estimate_manager_budget, _fetch_competitors, and
+ * cmd_squad_value's own assembly) - kept separate from report.ts the
+ * same way cli.py (fetch/compute) and report.py (render) are separate
+ * modules in the Python original.
+ *
+ * One deliberate scope cut from the Python version for this first pass:
+ * _estimate_manager_budget() there also adds inferred achievement
+ * rewards (achievements.py + a persisted "newly unlocked" tracker). That
+ * subsystem isn't ported yet, so competitor budget estimates here are a
+ * slightly lower bound than the Python CLI's - consistent with the
+ * existing "likely a lower bound" disclaimer already shown in the UI,
+ * since an achievement reward is exactly the kind of thing that
+ * disclaimer already warns isn't counted.
+ */
+
+import { KickbaseClient, KickbaseError } from "./kickbase-client.ts";
+import { historyDeltas } from "./predict.ts";
+
+const UPDATE_CUTOFF_HOUR_UTC = 18; // the daily market-value update empirically fires ~18:00-20:00 UTC
+
+function dayIndex(dtStr: string): number {
+  const dt = new Date(dtStr);
+  return Math.floor(dt.getTime() / 86_400_000);
+}
+
+/**
+ * Epoch day index to value a manager's starting-allocation squad at: the
+ * day *before* they joined if they joined before the daily value update
+ * fires that day, otherwise the join day itself.
+ */
+function referenceDayForJoin(joinDt: string): number {
+  const dt = new Date(joinDt);
+  const day = dayIndex(joinDt);
+  return dt.getUTCHours() < UPDATE_CUTOFF_HOUR_UTC ? day - 1 : day;
+}
+
+/**
+ * Epoch day index of the *first* daily update this purchase was already
+ * in place for. Mirror image of referenceDayForJoin(), not the same
+ * function - a join asks "which close price was my squad valued at"
+ * (shifts back a day pre-cutoff), a purchase asks "which update already
+ * reflects my ownership" (does not shift pre-cutoff - the imminent
+ * update is the first one that does). Conflating the two was a real bug,
+ * caught live: a player bought pre-cutoff the same day an update fired
+ * was wrongly excluded from that day's attributed gain.
+ */
+function firstUpdateDayAfterBuy(buyDt: string): number {
+  const dt = new Date(buyDt);
+  const day = dayIndex(buyDt);
+  return dt.getUTCHours() < UPDATE_CUTOFF_HOUR_UTC ? day : day + 1;
+}
+
+function ownedSinceDay(playerId: string, transferLog: any[]): number | null {
+  const buys = transferLog.filter((t) => t.pi === playerId && t.tty === 1);
+  if (buys.length === 0) return null;
+  const latest = buys.reduce((max, t) => (t.dt > max ? t.dt : max), buys[0].dt);
+  return firstUpdateDayAfterBuy(latest);
+}
+
+/**
+ * Whether a player's d1 can be credited to their current owner in a
+ * "squad total gain today" sum. Attributable iff their purchase was
+ * already in place for the update that produced d1.
+ */
+export function isDeltaAttributable(player: any, transferLog: any[]): boolean {
+  const windowStart = player.d1WindowStartDay;
+  if (windowStart == null) return true; // no window info to compare against - don't exclude
+  const ownedSince = ownedSinceDay(player.i, transferLog);
+  if (ownedSince == null) return true; // starting allocation - always attributable
+  return ownedSince <= windowStart + 1;
+}
+
+/** get_manager_squad()'s items use pi/pn instead of getSquad()'s i/fn+n - remap in place. */
+export function normalizeManagerSquadItems(items: any[]): any[] {
+  for (const item of items) {
+    item.i = item.pi;
+    item.n = item.pn;
+  }
+  return items;
+}
+
+/**
+ * Mutates each player in place, attaching real d1/d7/d1WindowStartDay
+ * from Kickbase's own history endpoint.
+ */
+export async function enrichWithHistory(
+  client: KickbaseClient,
+  leagueId: string,
+  players: any[]
+): Promise<void> {
+  await Promise.all(
+    players.map(async (player) => {
+      const playerId = player.i;
+      if (!playerId) return;
+      try {
+        const history = await client.getMarketValueHistory(leagueId, playerId);
+        Object.assign(player, historyDeltas(history));
+      } catch (err) {
+        if (!(err instanceof KickbaseError)) throw err;
+      }
+    })
+  );
+}
+
+/** Every transfer for a manager, walking pagination fully. */
+export async function allManagerTransfers(
+  client: KickbaseClient,
+  leagueId: string,
+  managerId: string
+): Promise<any[]> {
+  const entries: any[] = [];
+  let start = 0;
+  while (true) {
+    const batch = (await client.getManagerTransfers(leagueId, managerId, start)).it ?? [];
+    if (batch.length === 0) break;
+    entries.push(...batch);
+    start += batch.length;
+  }
+  return entries;
+}
+
+/**
+ * Reconstructs a manager's current budget: the fixed 150M starting
+ * budget, minus their starting-allocation squad's value, minus
+ * everything they've ever bought, plus everything they've ever sold. See
+ * the module docstring for the achievement-reward scope cut vs. the
+ * Python original.
+ */
+async function estimateManagerBudget(
+  client: KickbaseClient,
+  leagueId: string,
+  joinDt: string,
+  squadItems: any[],
+  log: any[]
+): Promise<number> {
+  const boughtIdsEver = new Set(log.filter((t) => t.tty === 1).map((t) => t.pi));
+  const currentIds = new Set(squadItems.map((p) => p.i));
+  const soldIds = new Set(log.filter((t) => t.tty === 2).map((t) => t.pi));
+  const startingIds = [...new Set([...currentIds, ...soldIds])].filter((id) => !boughtIdsEver.has(id));
+
+  const referenceDay = referenceDayForJoin(joinDt);
+  let startingCost = 0;
+  await Promise.all(
+    startingIds.map(async (playerId) => {
+      try {
+        const history = await client.getMarketValueHistory(leagueId, playerId as string);
+        const entry = (history.it ?? []).find((e: any) => e.dt === referenceDay);
+        startingCost += entry?.mv ?? 0;
+      } catch (err) {
+        if (!(err instanceof KickbaseError)) throw err;
+      }
+    })
+  );
+
+  const totalBought = log.filter((t) => t.tty === 1).reduce((sum, t) => sum + (t.trp ?? 0), 0);
+  const totalSold = log.filter((t) => t.tty === 2).reduce((sum, t) => sum + (t.trp ?? 0), 0);
+
+  return 150_000_000 - startingCost - totalBought + totalSold;
+}
+
+export interface CompetitorSummary {
+  name: string;
+  totalValue: number;
+  totalDelta: number | null;
+  estimatedBudget: number | null;
+}
+
+/**
+ * Every other league member's squad value, today's gain/loss, and
+ * estimated budget. Returns null (rather than a partial/misleading list)
+ * if the ranking call itself fails; a single competitor's squad failing
+ * to load just drops that one manager.
+ */
+export async function fetchCompetitors(
+  client: KickbaseClient,
+  leagueId: string
+): Promise<CompetitorSummary[] | null> {
+  let ranking: any;
+  try {
+    ranking = await client.getRanking(leagueId);
+  } catch {
+    return null;
+  }
+
+  const managers: any[] = ranking.us ?? [];
+  const competitors: CompetitorSummary[] = [];
+
+  await Promise.all(
+    managers.map(async (manager) => {
+      const managerId = manager.i;
+      const managerName = manager.n ?? "?";
+      if (!managerId || managerId === client.userId) return;
+
+      let squad: any[];
+      try {
+        squad = (await client.getManagerSquad(leagueId, managerId)).it ?? [];
+      } catch {
+        return;
+      }
+      normalizeManagerSquadItems(squad);
+      await enrichWithHistory(client, leagueId, squad);
+      const totalValue = squad.reduce((sum, p) => sum + (p.mv ?? 0), 0);
+
+      const log = await allManagerTransfers(client, leagueId, managerId);
+      const attributable = squad.filter((p) => p.d1 != null && isDeltaAttributable(p, log));
+      const totalDelta = attributable.length > 0 ? attributable.reduce((sum, p) => sum + p.d1, 0) : null;
+
+      let estimatedBudget: number | null = null;
+      const joinDt = manager.jd;
+      if (joinDt) {
+        try {
+          estimatedBudget = await estimateManagerBudget(client, leagueId, joinDt, squad, log);
+        } catch {
+          // Leave null - one manager's estimate failing shouldn't drop them entirely.
+        }
+      }
+
+      competitors.push({ name: managerName, totalValue, totalDelta, estimatedBudget });
+    })
+  );
+
+  return competitors;
+}
+
+export interface SquadValueReport {
+  leagueName: string;
+  budget: number;
+  totalValue: number;
+  netWorth: number;
+  totalDelta: number;
+  players: Array<{ name: string; d1: number; attributable: boolean }>;
+  noHistoryYet: string[];
+  competitors: CompetitorSummary[] | null;
+}
+
+function playerName(player: any): string {
+  const first = player.fn ?? "";
+  const last = player.n ?? player.ln ?? "";
+  const name = [first, last].filter(Boolean).join(" ");
+  return name || "?";
+}
+
+/**
+ * TS port of cmd_squad_value()'s data assembly (own squad + budget +
+ * history enrichment + attribution flags + competitors), returning
+ * structured data rather than printing - report.ts renders this both to
+ * the dashboard's JSON shape and to a Telegram HTML string.
+ */
+export async function buildSquadValueReport(
+  client: KickbaseClient,
+  leagueId: string,
+  leagueName: string,
+  includeCompetitors: boolean
+): Promise<SquadValueReport> {
+  const squad: any[] = (await client.getSquad(leagueId)).it ?? [];
+  const budget = (await client.getBudget(leagueId)).b ?? 0;
+  await enrichWithHistory(client, leagueId, squad);
+
+  const myLog = await allManagerTransfers(client, leagueId, client.userId!);
+  for (const player of squad) {
+    player.attributable = isDeltaAttributable(player, myLog);
+  }
+
+  const withDelta = squad.filter((p) => p.d1 != null);
+  const withoutDelta = squad.filter((p) => p.d1 == null);
+  const totalDelta = withDelta
+    .filter((p) => p.attributable !== false)
+    .reduce((sum, p) => sum + p.d1, 0);
+  const totalValue = squad.reduce((sum, p) => sum + (p.mv ?? 0), 0);
+
+  withDelta.sort((a, b) => b.d1 - a.d1);
+
+  const competitors = includeCompetitors ? await fetchCompetitors(client, leagueId) : null;
+
+  return {
+    leagueName,
+    budget,
+    totalValue,
+    netWorth: budget + totalValue,
+    totalDelta,
+    players: withDelta.map((p) => ({
+      name: playerName(p),
+      d1: p.d1,
+      attributable: p.attributable !== false,
+    })),
+    noHistoryYet: withoutDelta.map((p) => playerName(p)),
+    competitors,
+  };
+}
