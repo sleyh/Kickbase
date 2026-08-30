@@ -477,3 +477,21 @@ entrypoint = "./functions/live-matchday/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/live-matchday/*.html" ]
+
+[functions.admin-trigger-job]
+enabled = true
+# auth: 'user' in index.ts needs a real JWT, same reasoning as
+# test-kickbase-login above; admin status itself is checked inside the
+# function body against profiles.is_admin, not by this platform check.
+verify_jwt = true
+import_map = "./functions/admin-trigger-job/deno.json"
+entrypoint = "./functions/admin-trigger-job/index.ts"
+
+[functions.admin-health]
+enabled = true
+# auth: 'user' in index.ts needs a real JWT, same reasoning as
+# test-kickbase-login above; admin status itself is checked inside the
+# function body against profiles.is_admin, not by this platform check.
+verify_jwt = true
+import_map = "./functions/admin-health/deno.json"
+entrypoint = "./functions/admin-health/index.ts"

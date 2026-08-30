@@ -84,3 +84,58 @@ export interface LiveMatchdayReport {
   myMatches: LiveMatchGroup[];
   standings: LiveStandingEntry[];
 }
+
+/** Admin section types - report_type/job_type as text since the DB enum's exact members don't need mirroring 1:1 here. */
+export type ReportType = "squad_value" | "transfer_analysis" | "collect_bonus" | "market_alert";
+
+export const ADMIN_TRIGGERABLE_REPORT_TYPES: ReportType[] = [
+  "squad_value",
+  "transfer_analysis",
+  "collect_bonus",
+  "market_alert",
+];
+
+export interface AdminUserRow {
+  userId: string;
+  displayName: string | null;
+  isAdmin: boolean;
+  createdAt: string;
+  kickbaseEmail: string | null;
+  leagueId: string | null;
+  lastVerifiedAt: string | null;
+  telegramLinked: boolean;
+  telegramLinkedAt: string | null;
+}
+
+export interface JobRunRow {
+  id: string;
+  userId: string;
+  jobType: string;
+  startedAt: string;
+  finishedAt: string | null;
+  status: "running" | "success" | "failed";
+  outputSummary: string | null;
+  errorDetail: string | null;
+}
+
+export interface ScheduledJobRow {
+  id: string;
+  userId: string;
+  jobType: string;
+  cronExpression: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+}
+
+export interface HealthCheckResult {
+  ok: boolean;
+  detail: string;
+}
+
+export interface AdminHealthReport {
+  kickbase: HealthCheckResult;
+  telegram: HealthCheckResult;
+  database: HealthCheckResult;
+  checkedAt: string;
+}
