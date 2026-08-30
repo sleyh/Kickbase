@@ -153,10 +153,10 @@ export async function allManagerTransfers(
 
 /**
  * Reconstructs a manager's current budget: the fixed 150M starting
- * allocation, minus whatever of it is still tied up in starting-squad
- * players they've never sold, minus everything they've ever bought, plus
- * everything they've ever sold. See the module docstring for the
- * achievement-reward scope cut vs. the Python original.
+ * allocation, minus their starting-allocation squad's value, minus
+ * everything they've ever bought, plus everything they've ever sold. See
+ * the module docstring for the achievement-reward scope cut vs. the
+ * Python original.
  *
  * Previously anchored the starting squad's value to the day the manager
  * joined (`jd` on getRanking()'s response). Confirmed live that field no
@@ -164,20 +164,57 @@ export async function allManagerTransfers(
  * ranking response actually carries (i, n, adm, sp, mdp, shp, tv, spl,
  * mdpl, pa, lp, lipc, ppc, uim, hhsp, hll) was checked, none is a date -
  * so estimatedBudget was silently coming back null for every competitor.
- * Uses each still-held starting player's *current* market value instead:
- * a rougher approximation (their value has moved since they joined) but
- * the only one still computable, and consistent with the "≈, likely
- * imprecise" framing already shown in the UI. A starting player who's
- * since been sold can't be valued at the (now unknowable) join date
- * either, so their original allocation isn't subtracted - a small,
- * one-directional overestimate for managers who've flipped a starting
- * player, and the trade-off for this no longer needing a join date, or
- * any extra API calls, at all.
+ *
+ * A first fix valued still-held starting players at *today's* price
+ * instead - checked against the one real number this app can verify
+ * exactly (the logged-in account's own getBudget(), -15.97M at the time
+ * of checking): that version came back +34.1M, ~50M too high, because
+ * (a) today's price has drifted well above assignment-day price for
+ * players who've since gained value, and (b) starting players that have
+ * *since been sold* weren't valued at all - a real gap for anyone who's
+ * traded actively, i.e. exactly the managers a "spending power" number
+ * matters most for. That's what "returning a debt/spending-capacity
+ * number instead of the actual budget" looked like in practice.
+ *
+ * This version instead fetches each starting-allocation player's full
+ * 365-day getMarketValueHistory() (covers this league's entire history -
+ * confirmed live the real league is 13 days old) and uses the *earliest*
+ * entry in it as the assignment-day price proxy, for every starting
+ * player who's ever been held (current squad or since sold) - not just
+ * the ones still on the roster. Checked against the same known-real
+ * number: -7.3M, ~8.6M off instead of ~50M. Not exact - Kickbase's own
+ * daily snapshot granularity means "earliest tracked price" isn't
+ * necessarily "price at the literal moment of assignment," and a
+ * starting player later re-bought after being sold gets excluded from
+ * this calculation entirely (shows up in boughtIdsEver, so it's
+ * indistinguishable from a normal market buy) - but it's a real
+ * historical anchor instead of a live one, which is the actual ask.
  */
-export function estimateManagerBudget(squadItems: any[], log: any[]): number {
+export async function estimateManagerBudget(
+  client: KickbaseClient,
+  leagueId: string,
+  squadItems: any[],
+  log: any[]
+): Promise<number> {
   const boughtIdsEver = new Set(log.filter((t) => t.tty === 1).map((t) => t.pi));
-  const stillHeldStartingAllocation = squadItems.filter((p) => !boughtIdsEver.has(p.i));
-  const startingCost = stillHeldStartingAllocation.reduce((sum, p) => sum + (p.mv ?? 0), 0);
+  const currentIds = new Set(squadItems.map((p) => p.i));
+  const soldIds = new Set(log.filter((t) => t.tty === 2).map((t) => t.pi));
+  const startingIds = [...new Set([...currentIds, ...soldIds])].filter((id) => !boughtIdsEver.has(id));
+
+  let startingCost = 0;
+  await Promise.all(
+    startingIds.map(async (playerId) => {
+      try {
+        const history = await client.getMarketValueHistory(leagueId, playerId as string, 365);
+        const entries: any[] = history?.it ?? [];
+        if (entries.length === 0) return;
+        const earliest = entries.reduce((min, e) => (e.dt < min.dt ? e : min));
+        startingCost += earliest.mv ?? 0;
+      } catch (err) {
+        if (!(err instanceof KickbaseError)) throw err;
+      }
+    })
+  );
 
   const totalBought = log.filter((t) => t.tty === 1).reduce((sum, t) => sum + (t.trp ?? 0), 0);
   const totalSold = log.filter((t) => t.tty === 2).reduce((sum, t) => sum + (t.trp ?? 0), 0);
@@ -236,7 +273,7 @@ export async function fetchCompetitors(
       const attributable = squad.filter((p) => p.d1 != null && isDeltaAttributable(p, log));
       const totalDelta = attributable.length > 0 ? attributable.reduce((sum, p) => sum + p.d1, 0) : null;
 
-      const estimatedBudget = estimateManagerBudget(squad, log);
+      const estimatedBudget = await estimateManagerBudget(client, leagueId, squad, log);
 
       competitors.push({ id: managerId, name: managerName, totalValue, totalDelta, estimatedBudget, photo });
     })

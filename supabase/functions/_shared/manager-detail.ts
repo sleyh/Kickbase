@@ -73,7 +73,7 @@ export async function buildManagerDetail(
 
   const log = await allManagerTransfers(client, leagueId, managerId);
 
-  const estimatedBudget = estimateManagerBudget(squad, log);
+  const estimatedBudget = await estimateManagerBudget(client, leagueId, squad, log);
 
   let dashboard: ManagerDetailReport["dashboard"] = null;
   try {
