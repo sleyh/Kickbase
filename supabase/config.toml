@@ -411,3 +411,43 @@ enabled = true
 # declarative_schema_path = "./schemas"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+[functions.test-kickbase-login]
+enabled = true
+# auth: 'user' in index.ts needs a real JWT - the platform-level check
+# below and @supabase/server's own check are meant to overlap here.
+verify_jwt = true
+import_map = "./functions/test-kickbase-login/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/test-kickbase-login/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/test-kickbase-login/*.html" ]
+
+[functions.telegram-webhook]
+enabled = true
+# Telegram never sends a Supabase JWT or apikey - auth: 'none' in
+# index.ts, guarded instead by the X-Telegram-Bot-Api-Secret-Token
+# header (see TELEGRAM_WEBHOOK_SECRET).
+verify_jwt = false
+import_map = "./functions/telegram-webhook/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/telegram-webhook/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/telegram-webhook/*.html" ]
+
+[functions.telegram-link]
+enabled = true
+# auth: 'user' in index.ts needs a real JWT, same reasoning as
+# test-kickbase-login above.
+verify_jwt = true
+import_map = "./functions/telegram-link/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/telegram-link/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/telegram-link/*.html" ]

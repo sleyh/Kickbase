@@ -1,0 +1,5 @@
+# Supabase CLI local-machine cache - project link metadata, cached
+# binary versions, pooler URLs. Regenerated per machine by `supabase
+# link`; never something to commit.
+.branches
+.temp

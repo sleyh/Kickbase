@@ -21,6 +21,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq("id", user.id)
     .single();
 
+  const { data: account } = await supabase
+    .from("kickbase_accounts")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!account) {
+    redirect("/onboarding");
+  }
+
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-60 shrink-0 border-r bg-muted/20 md:block">
