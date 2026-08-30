@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { SquadValueView } from "@/components/reports/squad-value-view";
-import type { SquadValueReport } from "@/lib/types";
+import { normalizeSquadValueReport } from "@/lib/types";
 
 export default async function SquadValuePage() {
   const supabase = await createClient();
@@ -17,7 +17,7 @@ export default async function SquadValuePage() {
 
   return (
     <SquadValueView
-      initialData={(cached?.payload as SquadValueReport) ?? null}
+      initialData={normalizeSquadValueReport(cached?.payload)}
       generatedAt={cached?.generated_at ?? null}
     />
   );

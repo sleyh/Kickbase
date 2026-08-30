@@ -131,20 +131,20 @@ export function SquadValueView({
         <StatCard
           icon={data.totalDelta >= 0 ? TrendingUp : TrendingDown}
           label="Squad total today"
-          value={<AnimatedNumber value={data.totalDelta} formatter={signed} />}
+          value={<AnimatedNumber value={data.totalDelta} format="signed" />}
           tone={data.totalDelta >= 0 ? "positive" : "negative"}
         />
         <StatCard
           icon={Wallet}
           label="Budget"
-          value={<AnimatedNumber value={data.budget} formatter={compact} />}
+          value={<AnimatedNumber value={data.budget} format="compact" />}
           tone={data.budget < 0 ? "negative" : undefined}
         />
-        <StatCard icon={Trophy} label="Squad value" value={<AnimatedNumber value={data.totalValue} formatter={compact} />} />
+        <StatCard icon={Trophy} label="Squad value" value={<AnimatedNumber value={data.totalValue} format="compact" />} />
         <StatCard
           icon={PiggyBank}
           label="Total (budget + squad)"
-          value={<AnimatedNumber value={data.netWorth} formatter={compact} />}
+          value={<AnimatedNumber value={data.netWorth} format="compact" />}
         />
       </div>
 

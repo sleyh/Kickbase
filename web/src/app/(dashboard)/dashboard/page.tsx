@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { TrendingUp, Users, Repeat, Radio, ArrowRight, Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { compact, signed } from "@/lib/format";
-import type { SquadValueReport, BonusReport } from "@/lib/types";
+import { normalizeSquadValueReport, type BonusReport } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BonusCard } from "@/components/reports/bonus-card";
 import { RealtimeRefresher } from "@/components/realtime-refresher";
@@ -38,7 +37,7 @@ export default async function DashboardPage() {
       .maybeSingle(),
   ]);
 
-  const squadValue = squadValueCache?.payload as SquadValueReport | undefined;
+  const squadValue = normalizeSquadValueReport(squadValueCache?.payload);
 
   return (
     <div className="flex flex-col gap-6">
@@ -60,11 +59,7 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <div className="flex items-baseline gap-3">
-                <AnimatedNumber
-                  value={squadValue.totalValue}
-                  formatter={compact}
-                  className="text-3xl font-semibold"
-                />
+                <AnimatedNumber value={squadValue.totalValue} format="compact" className="text-3xl font-semibold" />
                 <span
                   className={
                     squadValue.totalDelta >= 0
@@ -72,7 +67,7 @@ export default async function DashboardPage() {
                       : "text-sm font-medium text-destructive"
                   }
                 >
-                  <AnimatedNumber value={squadValue.totalDelta} formatter={signed} /> today
+                  <AnimatedNumber value={squadValue.totalDelta} format="signed" /> today
                 </span>
               </div>
               {squadValue.valueTrend.length >= 2 ? (

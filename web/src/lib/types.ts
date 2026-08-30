@@ -23,6 +23,18 @@ export interface SquadValueReport {
   valueTrend: ValueTrendPoint[];
 }
 
+/**
+ * reports_cache rows written before valueTrend existed don't have that
+ * field at all (not even present-as-undefined) - reading one straight
+ * off the cache and accessing .valueTrend.length crashes the page.
+ * Every read of a cached squad_value payload should go through this.
+ */
+export function normalizeSquadValueReport(payload: unknown): SquadValueReport | null {
+  if (!payload) return null;
+  const partial = payload as Partial<SquadValueReport>;
+  return { ...partial, valueTrend: partial.valueTrend ?? [] } as SquadValueReport;
+}
+
 export const DEBT_CEILING_RATIO = 0.33;
 
 /** Mirrors supabase/functions/_shared/transfer-analysis.ts's SpendingProfile. */
