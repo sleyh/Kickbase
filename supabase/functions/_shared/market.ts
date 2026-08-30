@@ -70,7 +70,7 @@ function trendOf(item: any): "up" | "down" | "flat" {
   return "flat";
 }
 
-function ownerOf(item: any): { id: string; name: string; photo: string | null } | null {
+export function ownerOf(item: any): { id: string; name: string; photo: string | null } | null {
   const seller = item.u;
   if (!seller) return null;
   return { id: seller.i, name: seller.n ?? "?", photo: seller.im ?? seller.pim ?? seller.uim ?? null };

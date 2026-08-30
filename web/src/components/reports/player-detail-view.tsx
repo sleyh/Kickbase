@@ -89,6 +89,12 @@ export function PlayerDetailView({ id }: { id: string }) {
               <TeamBadge teamId={data.team.id} teamName={data.team.name} crest={data.team.crest} size="sm" />
             )}
             {data.team && <span>{data.team.name}</span>}
+            {data.listedBy && (
+              <span className="flex items-center gap-1.5 rounded-full bg-secondary py-0.5 pr-2.5 pl-0.5 text-xs font-medium text-secondary-foreground">
+                <PlayerAvatar name={data.listedBy.name} photo={data.listedBy.photo} size="sm" className="size-5" />
+                Listed by {data.listedBy.name}
+              </span>
+            )}
           </div>
         </div>
       </div>

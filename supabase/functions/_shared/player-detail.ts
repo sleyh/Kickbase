@@ -11,6 +11,7 @@
 import { KickbaseClient, KickbaseError } from "./kickbase-client.ts";
 import { allManagerTransfers } from "./squad-value.ts";
 import { fetchAllMatches, fetchLeagueTable, scheduledMatchesForTeam } from "./fixtures.ts";
+import { ownerOf } from "./market.ts";
 
 const UPCOMING_FIXTURES_TO_SHOW = 5;
 
@@ -31,6 +32,8 @@ export interface PlayerDetailReport {
     date: string;
   }>;
   ownership: { boughtPrice: number; boughtDate: string } | null;
+  /** The manager currently selling this player, if they're presently listed on the market by one - same "u" object market.ts's ownerOf() reads. null if not currently listed, or listed by the computer market. */
+  listedBy: { id: string; name: string; photo: string | null } | null;
 }
 
 function playerName(p: any): string {
@@ -46,14 +49,21 @@ export async function buildPlayerDetail(
 ): Promise<PlayerDetailReport> {
   const player = await client.getPlayer(leagueId, playerId);
 
-  const [historyResp, table, matches] = await Promise.all([
+  const [historyResp, table, matches, marketResp] = await Promise.all([
     client.getMarketValueHistory(leagueId, playerId, 92).catch((err) => {
       if (err instanceof KickbaseError) return null;
       throw err;
     }),
     fetchLeagueTable(client, leagueId),
     fetchAllMatches(client),
+    client.getMarket(leagueId).catch((err) => {
+      if (err instanceof KickbaseError) return null;
+      throw err;
+    }),
   ]);
+
+  const marketItem = (marketResp?.it ?? []).find((item: any) => item.i === playerId);
+  const listedBy = marketItem ? ownerOf(marketItem) : null;
 
   const history = ((historyResp?.it ?? []) as any[]).map((e) => ({ day: e.dt, value: e.mv }));
 
@@ -98,5 +108,6 @@ export async function buildPlayerDetail(
     history,
     upcomingFixtures,
     ownership,
+    listedBy,
   };
 }

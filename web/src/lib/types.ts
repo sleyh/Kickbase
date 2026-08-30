@@ -262,6 +262,7 @@ export interface PlayerDetailReport {
     date: string;
   }>;
   ownership: { boughtPrice: number; boughtDate: string } | null;
+  listedBy?: { id: string; name: string; photo: string | null } | null;
 }
 
 /** Mirrors supabase/functions/_shared/team-detail.ts's TeamDetailReport. */
