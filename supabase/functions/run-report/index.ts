@@ -2,8 +2,93 @@ import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
 import { KickbaseClient, KickbaseError } from "../_shared/kickbase-client.ts";
 import { buildSquadValueReport } from "../_shared/squad-value.ts";
-import { renderSquadValueTelegram } from "../_shared/report.ts";
+import { buildSpendingProfiles } from "../_shared/transfer-analysis.ts";
+import { buildMarketSnapshot } from "../_shared/market.ts";
+import {
+  renderSquadValueTelegram,
+  renderTransferAnalysisTelegram,
+  renderBonusCollectedTelegram,
+  renderMarketSnapshotTelegram,
+} from "../_shared/report.ts";
 import { sendMessage } from "../_shared/telegram.ts";
+
+interface RunResult {
+  payload: unknown;
+  outputSummary: string;
+  telegramText: string | null;
+}
+
+async function runSquadValue(
+  client: KickbaseClient,
+  leagueId: string,
+  leagueName: string
+): Promise<RunResult> {
+  const report = await buildSquadValueReport(client, leagueId, leagueName, true);
+  return {
+    payload: report,
+    outputSummary: `Squad value ${report.totalValue.toLocaleString()}, budget ${report.budget.toLocaleString()}`,
+    telegramText: renderSquadValueTelegram(report),
+  };
+}
+
+async function runTransferAnalysis(
+  client: KickbaseClient,
+  leagueId: string,
+  leagueName: string
+): Promise<RunResult> {
+  const profiles = await buildSpendingProfiles(client, leagueId);
+  const payload = { leagueName, profiles };
+  return {
+    payload,
+    outputSummary: `Spending profiles for ${profiles.length} managers`,
+    telegramText: renderTransferAnalysisTelegram(leagueName, profiles),
+  };
+}
+
+async function runCollectBonus(
+  client: KickbaseClient,
+  leagueId: string,
+  leagueName: string
+): Promise<RunResult> {
+  const result = await client.collectBonus();
+  const entry = (result.it ?? []).find((e: any) => e.li === leagueId);
+  if (!entry) {
+    return {
+      payload: { collected: false },
+      outputSummary: "Nothing to collect (already claimed today, or none yet).",
+      telegramText: null,
+    };
+  }
+  return {
+    payload: { collected: true, amount: entry.v, streakDay: entry.day },
+    outputSummary: `Collected ${entry.v.toLocaleString()} (day ${entry.day} streak)`,
+    telegramText: renderBonusCollectedTelegram(leagueName, entry.v, entry.day),
+  };
+}
+
+async function runMarketAlert(
+  client: KickbaseClient,
+  leagueId: string,
+  leagueName: string
+): Promise<RunResult> {
+  const market = (await client.getMarket(leagueId)).it ?? [];
+  const snapshot = buildMarketSnapshot(leagueName, market);
+  return {
+    payload: snapshot,
+    outputSummary: `${snapshot.notable.length} notable listings, ${snapshot.ownBids.length} own bids`,
+    telegramText: renderMarketSnapshotTelegram(snapshot),
+  };
+}
+
+const RUNNERS: Record<
+  string,
+  (client: KickbaseClient, leagueId: string, leagueName: string) => Promise<RunResult>
+> = {
+  squad_value: runSquadValue,
+  transfer_analysis: runTransferAnalysis,
+  collect_bonus: runCollectBonus,
+  market_alert: runMarketAlert,
+};
 
 /**
  * Runs one report for the caller: loads their linked Kickbase account,
@@ -11,11 +96,17 @@ import { sendMessage } from "../_shared/telegram.ts";
  * report, caches it, records a job_runs row either way, and - only when
  * { notify: true } is passed (the cron dispatcher's job, not the
  * dashboard's silent "Refresh" button) - pushes it to Telegram if the
- * user has a confirmed chat link.
+ * user has a confirmed chat link and the report actually has something
+ * to say (collect_bonus's telegramText is null when nothing was
+ * collected, matching cmd_collect_bonus's "skip Telegram on a no-op").
  *
- * Only "squad_value" is wired up so far; report_type is still accepted
- * in the body so the remaining report types (Task #4) can slot in here
- * without changing the calling convention.
+ * market_alert here is a live snapshot ("what's notable right now"), not
+ * a diff against the previous poll like cmd_alert()'s cron-driven
+ * new-listing detection - that needs a persistent previous snapshot to
+ * compare against, which a scheduled cron dispatcher would provide (not
+ * built yet). teamcenter_live isn't wired in here at all - live matchday
+ * data is meant to be fetched fresh on every dashboard view, not cached
+ * the way a snapshot report is - see its own dedicated Edge Function.
  */
 export default {
   fetch: withSupabase({ auth: "user" }, async (req, ctx) => {
@@ -23,7 +114,8 @@ export default {
     const reportType: string = body?.report_type ?? "squad_value";
     const notify: boolean = body?.notify === true;
 
-    if (reportType !== "squad_value") {
+    const runner = RUNNERS[reportType];
+    if (!runner) {
       return Response.json({ error: `Unknown report_type "${reportType}".` }, { status: 400 });
     }
 
@@ -54,12 +146,12 @@ export default {
       const league = client.leagues.find((l) => l.id === account.league_id);
       const leagueName = (league?.name as string) ?? account.league_id;
 
-      const report = await buildSquadValueReport(client, account.league_id, leagueName, true);
+      const { payload, outputSummary, telegramText } = await runner(client, account.league_id, leagueName);
 
       await ctx.supabaseAdmin.from("reports_cache").upsert({
         user_id: userId,
         report_type: reportType,
-        payload: report,
+        payload,
         generated_at: new Date().toISOString(),
       });
 
@@ -69,10 +161,10 @@ export default {
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         status: "success",
-        output_summary: `Squad value ${report.totalValue.toLocaleString()}, budget ${report.budget.toLocaleString()}`,
+        output_summary: outputSummary,
       });
 
-      if (notify) {
+      if (notify && telegramText) {
         const { data: link } = await ctx.supabaseAdmin
           .from("telegram_links")
           .select("chat_id")
@@ -81,7 +173,7 @@ export default {
         if (link?.chat_id) {
           const token = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
           try {
-            await sendMessage(token, link.chat_id, renderSquadValueTelegram(report));
+            await sendMessage(token, link.chat_id, telegramText);
           } catch (err) {
             // A Telegram delivery failure shouldn't fail the whole
             // report run - the report itself succeeded and is cached;
@@ -92,7 +184,7 @@ export default {
         }
       }
 
-      return Response.json(report);
+      return Response.json(payload);
     } catch (err) {
       const message = err instanceof KickbaseError ? err.message : String(err);
       await ctx.supabaseAdmin.from("job_runs").insert({

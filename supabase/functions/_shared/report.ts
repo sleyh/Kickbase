@@ -7,6 +7,8 @@
  */
 
 import type { SquadValueReport } from "./squad-value.ts";
+import type { SpendingProfile } from "./transfer-analysis.ts";
+import type { MarketSnapshot } from "./market.ts";
 
 // Kickbase lets a bid push your budget negative, up to a debt ceiling of
 // 33% of your total squad value - confirmed live via binary search on
@@ -34,6 +36,10 @@ function compact(n: number): string {
 
 function signed(n: number): string {
   return `${n >= 0 ? "+" : ""}${compact(n)}`;
+}
+
+function signedPct(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n.toFixed(0)}%`;
 }
 
 /**
@@ -88,6 +94,98 @@ export function renderSquadValueTelegram(data: SquadValueReport): string {
     lines.push("<i>ℹ️ ≈ = reconstructed estimate, not their real number</i>");
     lines.push("<i>(likely a lower bound - private bonuses/rewards aren't counted)</i>");
     lines.push("<i>💪 = max bid Kickbase allows: budget + 33% of squad value</i>");
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Qualitative read on a manager's average premium over current market
+ * value across their computer-market buys. Same 3%/15% thresholds as the
+ * Python original.
+ */
+function spendingLabel(avgPct: number | null): string {
+  if (avgPct == null) return "ℹ️ no computer-market buys yet";
+  if (avgPct <= 3) return `🎯 pays close to asking price (${signedPct(avgPct)} avg)`;
+  if (avgPct <= 15) return `💵 pays a moderate premium (${signedPct(avgPct)} avg)`;
+  return `🔥 tends to overspend (${signedPct(avgPct)} avg)`;
+}
+
+/**
+ * TS port of render_spending_analysis() - compares what each league
+ * member actually paid for a player against that player's current market
+ * value, the only way to see anything about Kickbase's otherwise-hidden
+ * sealed-bid market, retroactively once a transfer has completed.
+ */
+export function renderTransferAnalysisTelegram(leagueName: string, profiles: SpendingProfile[]): string {
+  const e = escapeHtml;
+  const lines: string[] = [
+    `💸 <b>Transfer Spending Analysis — ${e(leagueName)}</b>`,
+    "ℹ️ Premium = price paid vs. that player's current market value",
+    "",
+  ];
+
+  const avgOf = (p: SpendingProfile) =>
+    p.computerBuys.length > 0
+      ? p.computerBuys.reduce((sum, b) => sum + b.premiumPct, 0) / p.computerBuys.length
+      : -Infinity;
+
+  for (const profile of [...profiles].sort((a, b) => avgOf(b) - avgOf(a))) {
+    const buys = profile.computerBuys;
+    const avg = buys.length > 0 ? buys.reduce((sum, b) => sum + b.premiumPct, 0) / buys.length : null;
+    const count = `${buys.length} computer buy${buys.length !== 1 ? "s" : ""}`;
+    lines.push(`${spendingLabel(avg)} — <b>${e(profile.name)}</b> (${count})`);
+  }
+
+  const managerTrades = profiles.flatMap((p) => p.managerBuys.map((b) => ({ name: p.name, b })));
+  if (managerTrades.length > 0) {
+    lines.push("");
+    lines.push("🤝 <b>Manager-to-manager trades</b>");
+    for (const { name, b } of managerTrades.sort((x, y) => Math.abs(y.b.premiumPct) - Math.abs(x.b.premiumPct))) {
+      lines.push(
+        `${e(name)} paid ${e(signedPct(b.premiumPct))} vs. value for ${e(b.playerName)} ` +
+          `(${e(compact(b.trp))} vs. ${e(compact(b.mv))}) — bought from ${e(b.othnm!)}`
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * TS port of render_bonus_collected() - a one-line Telegram message, only
+ * ever sent when something was actually collected.
+ */
+export function renderBonusCollectedTelegram(leagueName: string, amount: number, streakDay: number): string {
+  const e = escapeHtml;
+  return `💰 <b>Daily bonus collected</b> — ${e(leagueName)}\n${e(compact(amount))} (day ${streakDay} streak)`;
+}
+
+/**
+ * A market snapshot digest: notable listings (rising or already scoring)
+ * plus your own active bids. Not a diff against the previous poll (see
+ * market.ts's module docstring) - "what's notable right now."
+ */
+export function renderMarketSnapshotTelegram(data: MarketSnapshot): string {
+  const e = escapeHtml;
+  const lines: string[] = [`🛒 <b>Market Snapshot — ${e(data.leagueName)}</b>`, ""];
+
+  if (data.notable.length === 0) {
+    lines.push("Nothing notable on the market right now.");
+  } else {
+    lines.push("<b>Notable listings</b> (rising or already scoring)");
+    for (const p of data.notable.slice(0, 15)) {
+      const trend = p.rising ? "📈" : "⚪";
+      lines.push(`${trend} <b>${e(p.name)}</b>  ${e(compact(p.price))}  (${p.avgPoints} avg pts)`);
+    }
+  }
+
+  if (data.ownBids.length > 0) {
+    lines.push("");
+    lines.push("<b>Your active bids</b>");
+    for (const p of data.ownBids) {
+      lines.push(`📤 <b>${e(p.name)}</b>  ${e(compact(p.ownBidAmount ?? 0))}`);
+    }
   }
 
   return lines.join("\n");
