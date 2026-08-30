@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   TrendingUp,
+  Table2,
   Users,
   Repeat,
   Radio,
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/squad-value", label: "Squad Value", icon: TrendingUp },
+  { href: "/dashboard/squad", label: "Squad", icon: Table2 },
   { href: "/dashboard/competitors", label: "Competitors", icon: Users },
   { href: "/dashboard/transfer-analysis", label: "Transfer Analysis", icon: Repeat },
   { href: "/dashboard/live", label: "Live Matchday", icon: Radio },

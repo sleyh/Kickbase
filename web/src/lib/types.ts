@@ -29,10 +29,14 @@ export interface SquadValueReport {
     name: string;
     value?: number;
     d1: number;
+    d7?: number | null;
+    points?: number | null;
+    rating?: number;
     attributable: boolean;
     photo?: string | null;
     sparkline?: number[];
     pos?: number | null;
+    tid?: string | null;
   }>;
   noHistoryYet: string[];
   competitors: CompetitorSummary[] | null;

@@ -19,6 +19,7 @@
 
 import { KickbaseClient, KickbaseError } from "./kickbase-client.ts";
 import { historyDeltas } from "./predict.ts";
+import { computeSquadRatings } from "./squad-rating.ts";
 
 const UPDATE_CUTOFF_HOUR_UTC = 18; // the daily market-value update empirically fires ~18:00-20:00 UTC
 
@@ -279,10 +280,14 @@ export interface SquadValueReport {
     name: string;
     value: number;
     d1: number;
+    d7: number | null;
+    points: number | null;
+    rating: number;
     attributable: boolean;
     photo: string | null;
     sparkline: number[];
     pos: number | null;
+    tid: string | null;
   }>;
   noHistoryYet: string[];
   competitors: CompetitorSummary[] | null;
@@ -328,20 +333,35 @@ export async function buildSquadValueReport(
 
   const competitors = includeCompetitors ? await fetchCompetitors(client, leagueId) : null;
 
+  const ratings = await computeSquadRatings(
+    client,
+    withDelta.map((p) => ({
+      tid: p.tid ?? null,
+      points: p.tp ?? p.p ?? p.ap ?? null,
+      d1: p.d1,
+      d7: p.d7 ?? null,
+      value: p.mv ?? 0,
+    }))
+  );
+
   return {
     leagueName,
     budget,
     totalValue,
     netWorth: budget + totalValue,
     totalDelta,
-    players: withDelta.map((p) => ({
+    players: withDelta.map((p, i) => ({
       name: playerName(p),
       value: p.mv ?? 0,
       d1: p.d1,
+      d7: p.d7 ?? null,
+      points: p.tp ?? p.p ?? p.ap ?? null,
+      rating: ratings[i],
       attributable: p.attributable !== false,
       photo: p.pim ?? null,
       sparkline: playerSparkline(p._historyEntries),
       pos: p.pos ?? null,
+      tid: p.tid ?? null,
     })),
     noHistoryYet: withoutDelta.map((p) => playerName(p)),
     competitors,
