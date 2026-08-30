@@ -25,6 +25,7 @@ async function currentMatchday(client: KickbaseClient): Promise<{ day: number; m
 export interface LiveMatchTeam {
   id: string;
   name: string;
+  crest: string | null;
   goals: number;
 }
 
@@ -61,9 +62,13 @@ export async function buildLiveMatchdayReport(
   const day = dayInfo?.day ?? null;
 
   const teamNames = new Map<string, string>();
+  const teamCrests = new Map<string, string | null>();
   if (day != null) {
     const table = (await client.getCompetitionTable(BUNDESLIGA_COMPETITION_ID)).it ?? [];
-    for (const t of table) teamNames.set(t.tid, t.tn);
+    for (const t of table) {
+      teamNames.set(t.tid, t.tn);
+      teamCrests.set(t.tid, t.tim ?? null);
+    }
   }
 
   const myMatches: LiveMatchGroup[] = [];
@@ -86,8 +91,8 @@ export async function buildLiveMatchdayReport(
       if (!groups.has(key)) {
         groups.set(key, {
           matchId: key,
-          team1: { id: match.t1, name: t1Name, goals: match.t1g ?? 0 },
-          team2: { id: match.t2, name: t2Name, goals: match.t2g ?? 0 },
+          team1: { id: match.t1, name: t1Name, crest: teamCrests.get(match.t1) ?? null, goals: match.t1g ?? 0 },
+          team2: { id: match.t2, name: t2Name, crest: teamCrests.get(match.t2) ?? null, goals: match.t2g ?? 0 },
           minute: match.mtd ?? "?",
           status: match.st ?? 0,
           isLive: match.il === true,

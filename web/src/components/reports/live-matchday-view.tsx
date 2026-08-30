@@ -113,11 +113,11 @@ export function LiveMatchdayView() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               {match.isLive && <LiveDot />}
-              <TeamBadge teamId={match.team1.id} teamName={match.team1.name} size="sm" />
+              <TeamBadge teamId={match.team1.id} teamName={match.team1.name} crest={match.team1.crest} size="sm" />
               <span>
                 {match.team1.name} {match.team1.goals}-{match.team2.goals} {match.team2.name}
               </span>
-              <TeamBadge teamId={match.team2.id} teamName={match.team2.name} size="sm" />
+              <TeamBadge teamId={match.team2.id} teamName={match.team2.name} crest={match.team2.crest} size="sm" />
               <span className="text-sm font-normal text-muted-foreground">min {match.minute}</span>
             </CardTitle>
           </CardHeader>

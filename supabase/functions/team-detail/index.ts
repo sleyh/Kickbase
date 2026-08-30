@@ -15,10 +15,10 @@ export default {
     if (isAuthContextError(ctxResult)) {
       return Response.json({ error: ctxResult.error }, { status: ctxResult.status });
     }
-    const { client } = ctxResult;
+    const { client, leagueId } = ctxResult;
 
     try {
-      const report = await buildTeamDetail(client, id);
+      const report = await buildTeamDetail(client, leagueId, id);
       return Response.json(report);
     } catch (err) {
       const message = err instanceof KickbaseError ? err.message : String(err);

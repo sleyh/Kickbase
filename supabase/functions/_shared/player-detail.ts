@@ -19,11 +19,17 @@ export interface PlayerDetailReport {
   name: string;
   photo: string | null;
   pos: number | null;
-  team: { id: string; name: string } | null;
+  team: { id: string; name: string; crest: string | null } | null;
   value: number | null;
   points: number | null;
   history: Array<{ day: number; value: number }>;
-  upcomingFixtures: Array<{ opponentId: string; opponentName: string; opponentStrength: number; date: string }>;
+  upcomingFixtures: Array<{
+    opponentId: string;
+    opponentName: string;
+    opponentCrest: string | null;
+    opponentStrength: number;
+    date: string;
+  }>;
   ownership: { boughtPrice: number; boughtDate: string } | null;
 }
 
@@ -45,7 +51,7 @@ export async function buildPlayerDetail(
       if (err instanceof KickbaseError) return null;
       throw err;
     }),
-    fetchLeagueTable(client),
+    fetchLeagueTable(client, leagueId),
     fetchAllMatches(client),
   ]);
 
@@ -53,7 +59,7 @@ export async function buildPlayerDetail(
 
   const tid: string | null = player.tid ?? null;
   const teamEntry = tid != null ? table.find((t) => t.tid === tid) : undefined;
-  const team = teamEntry ? { id: teamEntry.tid, name: teamEntry.name } : null;
+  const team = teamEntry ? { id: teamEntry.tid, name: teamEntry.name, crest: teamEntry.crest } : null;
 
   const upcomingFixtures = tid
     ? scheduledMatchesForTeam(matches, tid, UPCOMING_FIXTURES_TO_SHOW).map((m: any) => {
@@ -62,6 +68,7 @@ export async function buildPlayerDetail(
         return {
           opponentId,
           opponentName: opponent?.name ?? opponentId,
+          opponentCrest: opponent?.crest ?? null,
           opponentStrength: opponent?.strength ?? 0.5,
           date: m.dt,
         };

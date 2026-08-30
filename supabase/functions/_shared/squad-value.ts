@@ -337,6 +337,7 @@ export async function buildSquadValueReport(
 
   const ratings = await computeSquadRatings(
     client,
+    leagueId,
     withDelta.map((p) => ({
       tid: p.tid ?? null,
       points: p.tp ?? p.p ?? p.ap ?? null,

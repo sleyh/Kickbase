@@ -80,7 +80,7 @@ export function TeamDetailView({ id }: { id: string }) {
       </div>
 
       <div className="flex items-center gap-4">
-        <TeamBadge teamId={data.id} teamName={data.name} className="size-14 rounded-xl text-base" />
+        <TeamBadge teamId={data.id} teamName={data.name} crest={data.crest} className="size-14 rounded-xl text-base" />
         <div>
           <h1 className="font-heading text-2xl font-semibold tracking-tight">{data.name}</h1>
           {data.rank != null && <p className="text-sm text-muted-foreground">Rank #{data.rank} in the Bundesliga</p>}
@@ -104,7 +104,7 @@ export function TeamDetailView({ id }: { id: string }) {
               {data.recentMatches.map((f) => (
                 <div key={f.matchId} className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <TeamBadge teamId={f.opponentId} teamName={f.opponentName} size="sm" />
+                    <TeamBadge teamId={f.opponentId} teamName={f.opponentName} crest={f.opponentCrest} size="sm" />
                     <span className="text-sm">
                       {f.home ? "vs" : "@"} {f.opponentName}
                     </span>
@@ -131,7 +131,7 @@ export function TeamDetailView({ id }: { id: string }) {
                 return (
                   <div key={f.matchId} className="flex items-center justify-between rounded-lg border px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <TeamBadge teamId={f.opponentId} teamName={f.opponentName} size="sm" />
+                      <TeamBadge teamId={f.opponentId} teamName={f.opponentName} crest={f.opponentCrest} size="sm" />
                       <span className="text-sm">
                         {f.home ? "vs" : "@"} {f.opponentName}
                       </span>

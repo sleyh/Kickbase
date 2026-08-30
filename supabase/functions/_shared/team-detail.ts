@@ -16,6 +16,7 @@ export interface TeamFixture {
   matchId: string;
   opponentId: string;
   opponentName: string;
+  opponentCrest: string | null;
   opponentStrength: number;
   date: string;
   home: boolean;
@@ -26,14 +27,15 @@ export interface TeamFixture {
 export interface TeamDetailReport {
   id: string;
   name: string;
+  crest: string | null;
   rank: number | null;
   strength: number | null;
   recentMatches: TeamFixture[];
   upcomingMatches: TeamFixture[];
 }
 
-export async function buildTeamDetail(client: KickbaseClient, teamId: string): Promise<TeamDetailReport> {
-  const [table, matches] = await Promise.all([fetchLeagueTable(client), fetchAllMatches(client)]);
+export async function buildTeamDetail(client: KickbaseClient, leagueId: string, teamId: string): Promise<TeamDetailReport> {
+  const [table, matches] = await Promise.all([fetchLeagueTable(client, leagueId), fetchAllMatches(client)]);
   const team = table.find((t) => t.tid === teamId);
 
   function toFixture(m: any): TeamFixture {
@@ -44,6 +46,7 @@ export async function buildTeamDetail(client: KickbaseClient, teamId: string): P
       matchId: m.mi,
       opponentId,
       opponentName: opponent?.name ?? opponentId,
+      opponentCrest: opponent?.crest ?? null,
       opponentStrength: opponent?.strength ?? 0.5,
       date: m.dt,
       home,
@@ -55,6 +58,7 @@ export async function buildTeamDetail(client: KickbaseClient, teamId: string): P
   return {
     id: teamId,
     name: team?.name ?? teamId,
+    crest: team?.crest ?? null,
     rank: team?.rank ?? null,
     strength: team?.strength ?? null,
     recentMatches: finishedMatchesForTeam(matches, teamId, FIXTURES_TO_SHOW).map(toFixture),

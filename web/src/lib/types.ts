@@ -112,6 +112,7 @@ export interface MarketSnapshot {
 export interface LiveMatchTeam {
   id: string;
   name: string;
+  crest?: string | null;
   goals: number;
 }
 
@@ -234,11 +235,17 @@ export interface PlayerDetailReport {
   name: string;
   photo: string | null;
   pos: number | null;
-  team: { id: string; name: string } | null;
+  team: { id: string; name: string; crest: string | null } | null;
   value: number | null;
   points: number | null;
   history: Array<{ day: number; value: number }>;
-  upcomingFixtures: Array<{ opponentId: string; opponentName: string; opponentStrength: number; date: string }>;
+  upcomingFixtures: Array<{
+    opponentId: string;
+    opponentName: string;
+    opponentCrest: string | null;
+    opponentStrength: number;
+    date: string;
+  }>;
   ownership: { boughtPrice: number; boughtDate: string } | null;
 }
 
@@ -247,6 +254,7 @@ export interface TeamFixture {
   matchId: string;
   opponentId: string;
   opponentName: string;
+  opponentCrest: string | null;
   opponentStrength: number;
   date: string;
   home: boolean;
@@ -257,6 +265,7 @@ export interface TeamFixture {
 export interface TeamDetailReport {
   id: string;
   name: string;
+  crest: string | null;
   rank: number | null;
   strength: number | null;
   recentMatches: TeamFixture[];

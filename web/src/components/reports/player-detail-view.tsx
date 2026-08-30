@@ -85,7 +85,9 @@ export function PlayerDetailView({ id }: { id: string }) {
           <h1 className="font-heading text-2xl font-semibold tracking-tight">{data.name}</h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="outline">{positionLabel(data.pos)}</Badge>
-            {data.team && <TeamBadge teamId={data.team.id} teamName={data.team.name} size="sm" />}
+            {data.team && (
+              <TeamBadge teamId={data.team.id} teamName={data.team.name} crest={data.team.crest} size="sm" />
+            )}
             {data.team && <span>{data.team.name}</span>}
           </div>
         </div>
@@ -148,7 +150,7 @@ export function PlayerDetailView({ id }: { id: string }) {
               return (
                 <div key={`${f.opponentId}-${f.date}`} className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <TeamBadge teamId={f.opponentId} teamName={f.opponentName} size="sm" />
+                    <TeamBadge teamId={f.opponentId} teamName={f.opponentName} crest={f.opponentCrest} size="sm" />
                     <span className="font-medium">{f.opponentName}</span>
                   </div>
                   <div className="flex items-center gap-3">

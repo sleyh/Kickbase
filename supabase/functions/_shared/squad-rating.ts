@@ -40,8 +40,8 @@ function minMaxNormalize(values: number[], value: number): number {
  * UPCOMING_FIXTURES_TO_CONSIDER scheduled matches - one league-table
  * fetch + one matchdays fetch total, not per player.
  */
-async function fetchUpcomingOpponentStrength(client: KickbaseClient): Promise<Map<string, number>> {
-  const [table, matches] = await Promise.all([fetchLeagueTable(client), fetchAllMatches(client)]);
+async function fetchUpcomingOpponentStrength(client: KickbaseClient, leagueId: string): Promise<Map<string, number>> {
+  const [table, matches] = await Promise.all([fetchLeagueTable(client, leagueId), fetchAllMatches(client)]);
   const strengthByTeam = new Map(table.map((t) => [t.tid, t.strength]));
 
   const opponentStrengthByTeam = new Map<string, number>();
@@ -66,10 +66,14 @@ export interface RatingInput {
 }
 
 /** Returns one 0-100 rating per input player, same order. */
-export async function computeSquadRatings(client: KickbaseClient, players: RatingInput[]): Promise<number[]> {
+export async function computeSquadRatings(
+  client: KickbaseClient,
+  leagueId: string,
+  players: RatingInput[]
+): Promise<number[]> {
   if (players.length === 0) return [];
 
-  const opponentStrength = await fetchUpcomingOpponentStrength(client);
+  const opponentStrength = await fetchUpcomingOpponentStrength(client, leagueId);
 
   const pointsValues = players.map((p) => p.points ?? 0);
   const momentumValues = players.map((p) => (p.d1 ?? 0) + (p.d7 ?? 0));

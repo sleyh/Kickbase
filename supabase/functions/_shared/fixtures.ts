@@ -10,34 +10,81 @@ import { KickbaseClient } from "./kickbase-client.ts";
 
 export const BUNDESLIGA_COMPETITION_ID = "1";
 
+// Team "strength" blends two different signals on purpose: table
+// position alone is noisy early in a season (small sample, a couple of
+// results can swing it a lot), while squad market value is a steadier
+// read on underlying quality but doesn't capture current form. Weights
+// are a judgment call, not derived - retune here if it doesn't feel
+// right against a real table.
+const WEIGHT_RANK = 0.6;
+const WEIGHT_MARKET_VALUE = 0.4;
+
 export interface TeamStanding {
   tid: string;
   name: string;
-  rank: number; // 1-based, 1 = strongest
-  strength: number; // 0..1, 1 = strongest
+  rank: number; // 1-based (from the table's own "cpl" field), 1 = strongest
+  strength: number; // 0..1 blend of rank + squad market value, 1 = strongest
+  crest: string | null;
 }
 
 /**
- * The competition table, rank-ordered. Array position is the primary
- * rank signal (a "table" endpoint is inherently ordered), refined by an
- * explicit rank/points field when one is present - doesn't depend on
- * knowing the exact field name Kickbase uses for it.
+ * Every listed player's market value, summed by team - confirmed live
+ * that the competition table itself carries no squad-value field (just
+ * cpl/pts/goal-difference), so this is the closest available proxy:
+ * whichever players are currently on this league's own computer market,
+ * grouped by club. Not a true full-squad valuation (there's no
+ * confirmed "all players for a team" endpoint to build one from - see
+ * team-detail.ts's own roster disclaimer) - a team with few or no
+ * players listed at the moment this runs will undervalue here, which is
+ * exactly why this is blended with table position rather than used
+ * alone.
  */
-export async function fetchLeagueTable(client: KickbaseClient): Promise<TeamStanding[]> {
-  const tableResp = await client.getCompetitionTable(BUNDESLIGA_COMPETITION_ID);
+async function fetchTeamMarketValues(client: KickbaseClient, leagueId: string): Promise<Map<string, number>> {
+  const marketResp = await client.getMarket(leagueId);
+  const items: any[] = marketResp?.it ?? [];
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    if (!item.tid || item.mv == null) continue;
+    totals.set(item.tid, (totals.get(item.tid) ?? 0) + item.mv);
+  }
+  return totals;
+}
+
+function normalize01(values: number[], value: number): number {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max === min) return 0.5;
+  return (value - min) / (max - min);
+}
+
+/**
+ * The competition table, rank-ordered by the table's own "cpl" (current
+ * placement) field - confirmed live, not guessed - refined into a
+ * blended strength score with each team's approximate squad market value.
+ */
+export async function fetchLeagueTable(client: KickbaseClient, leagueId: string): Promise<TeamStanding[]> {
+  const [tableResp, marketValueByTeam] = await Promise.all([
+    client.getCompetitionTable(BUNDESLIGA_COMPETITION_ID),
+    fetchTeamMarketValues(client, leagueId),
+  ]);
+
   const table: any[] = tableResp?.it ?? [];
-  const ranked = [...table].sort((a, b) => {
-    const aRank = a.pos ?? a.tp ?? null;
-    const bRank = b.pos ?? b.tp ?? null;
-    return aRank != null && bRank != null ? aRank - bRank : 0;
-  });
+  const ranked = [...table].sort((a, b) => (a.cpl ?? 0) - (b.cpl ?? 0));
   const teamCount = Math.max(1, ranked.length - 1);
-  return ranked.map((t, i) => ({
-    tid: t.tid,
-    name: t.tn,
-    rank: i + 1,
-    strength: 1 - i / teamCount,
-  }));
+  const mvValues = ranked.map((t) => marketValueByTeam.get(t.tid) ?? 0);
+
+  return ranked.map((t, i) => {
+    const rankStrength = 1 - i / teamCount;
+    const mv = marketValueByTeam.get(t.tid);
+    const mvStrength = mv != null ? normalize01(mvValues, mv) : 0.5;
+    return {
+      tid: t.tid,
+      name: t.tn,
+      rank: t.cpl ?? i + 1,
+      strength: rankStrength * WEIGHT_RANK + mvStrength * WEIGHT_MARKET_VALUE,
+      crest: t.tim ?? null,
+    };
+  });
 }
 
 /** Every match across every matchday, raw, unfiltered - one call, callers filter with the helpers below. */
