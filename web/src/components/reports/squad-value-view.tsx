@@ -1,26 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { RefreshCw, TrendingUp, TrendingDown, Wallet, PiggyBank, Trophy } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { RefreshCw, TrendingUp, TrendingDown, Wallet, PiggyBank, Trophy, Users, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { compact, signed } from "@/lib/format";
-import { DEBT_CEILING_RATIO, type SquadValueReport } from "@/lib/types";
+import type { SquadValueReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { ValueTrendChart } from "@/components/reports/value-trend-chart";
 import { AnimatedNumber } from "@/components/motion/animated-number";
+import { PlayerCard } from "@/components/kickbase/player-card";
+import { ManagerCard } from "@/components/kickbase/manager-card";
 import { celebrate } from "@/lib/celebrate";
 import { toast } from "sonner";
 
 const BIG_WIN_THRESHOLD = 500_000;
-
-const chartConfig = {
-  value: { label: "Squad value", color: "var(--chart-1)" },
-} satisfies ChartConfig;
 
 function StatCard({
   icon: Icon,
@@ -105,16 +100,15 @@ export function SquadValueView({
     );
   }
 
-  const chartData = [
-    { name: "You", value: data.totalValue },
-    ...(data.competitors ?? []).map((c) => ({ name: c.name, value: c.totalValue })),
-  ].sort((a, b) => b.value - a.value);
+  const topCompetitors = [...(data.competitors ?? [])]
+    .sort((a, b) => (b.totalDelta ?? -Infinity) - (a.totalDelta ?? -Infinity))
+    .slice(0, 3);
 
   return (
     <div className={`flex flex-col gap-6 transition-opacity ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{data.leagueName}</h1>
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">{data.leagueName}</h1>
           {lastGenerated && (
             <p className="text-sm text-muted-foreground">
               Updated {new Date(lastGenerated).toLocaleString()}
@@ -159,105 +153,68 @@ export function SquadValueView({
         </Card>
       )}
 
-      {data.competitors && data.competitors.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Squad value vs. competitors</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ChartContainer config={chartConfig} className="h-64 w-full">
-              <BarChart data={chartData} layout="vertical" margin={{ left: 12 }}>
-                <CartesianGrid horizontal={false} />
-                <XAxis type="number" tickFormatter={(v) => compact(v)} />
-                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12 }} />
-                <ChartTooltip content={<ChartTooltipContent formatter={(v) => compact(Number(v))} />} />
-                <Bar dataKey="value" fill="var(--color-value)" radius={4} />
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardHeader>
           <CardTitle>Your players today</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {data.players.map((p, i) => (
-            <motion.div
-              key={p.name}
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.02 }}
-              className="flex items-center justify-between rounded-lg border px-3 py-2"
-            >
-              <span className="font-medium">{p.name}</span>
-              <div className="flex items-center gap-2">
-                {!p.attributable && (
-                  <Badge variant="secondary" className="text-xs">
-                    just bought
-                  </Badge>
-                )}
-                <span
-                  className={
-                    p.d1 > 0
-                      ? "text-green-600 dark:text-green-400"
-                      : p.d1 < 0
-                        ? "text-destructive"
-                        : "text-muted-foreground"
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {data.players.map((p, i) => (
+              <motion.div
+                key={p.name}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+              >
+                <PlayerCard
+                  player={{
+                    name: p.name,
+                    photo: p.photo,
+                    pos: p.pos,
+                    value: p.value,
+                    delta: p.d1,
+                    sparkline: p.sparkline,
+                  }}
+                  badge={
+                    !p.attributable && (
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                        just bought
+                      </span>
+                    )
                   }
-                >
-                  {signed(p.d1)}
-                </span>
-              </div>
-            </motion.div>
-          ))}
+                />
+              </motion.div>
+            ))}
+          </div>
           {data.noHistoryYet.length > 0 && (
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-4 text-sm text-muted-foreground">
               No value history yet: {data.noHistoryYet.join(", ")}
             </p>
           )}
         </CardContent>
       </Card>
 
-      {data.competitors && (
+      {topCompetitors.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle>Competitors</CardTitle>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="size-4" /> Top movers among competitors
+            </CardTitle>
+            <Link href="/dashboard/competitors">
+              <Button variant="ghost" size="sm">
+                View all <ArrowRight className="size-3.5" />
+              </Button>
+            </Link>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {[...data.competitors]
-              .sort((a, b) => (b.totalDelta ?? -Infinity) - (a.totalDelta ?? -Infinity))
-              .map((c) => (
-                <div key={c.name} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{c.name}</span>
-                    <span
-                      className={
-                        c.totalDelta == null
-                          ? "text-muted-foreground"
-                          : c.totalDelta > 0
-                            ? "text-green-600 dark:text-green-400"
-                            : c.totalDelta < 0
-                              ? "text-destructive"
-                              : "text-muted-foreground"
-                      }
-                    >
-                      {c.totalDelta == null ? "no data yet" : signed(c.totalDelta)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">squad {compact(c.totalValue)}</p>
-                  {c.estimatedBudget != null && (
-                    <p className="text-sm text-muted-foreground">
-                      budget ≈{compact(c.estimatedBudget)} · can spend up to ≈
-                      {compact(c.estimatedBudget + DEBT_CEILING_RATIO * c.totalValue)}
-                    </p>
-                  )}
-                </div>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {topCompetitors.map((c) => (
+                <ManagerCard
+                  key={c.name}
+                  manager={{ name: c.name, photo: c.photo, value: c.totalValue, delta: c.totalDelta }}
+                />
               ))}
-            <p className="text-xs text-muted-foreground">
-              ≈ = reconstructed estimate, likely a lower bound (private bonuses/rewards aren&apos;t counted)
-            </p>
+            </div>
           </CardContent>
         </Card>
       )}

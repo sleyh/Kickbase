@@ -127,7 +127,7 @@ export function AdminDashboard({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex items-center gap-2 font-heading text-2xl font-semibold tracking-tight">
           <ShieldCheck className="size-5" /> Admin
         </h1>
         <p className="text-sm text-muted-foreground">

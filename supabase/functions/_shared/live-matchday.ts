@@ -22,18 +22,26 @@ async function currentMatchday(client: KickbaseClient): Promise<{ day: number; m
   return { day: latest.day, matches: latest.it ?? [] };
 }
 
+export interface LiveMatchTeam {
+  id: string;
+  name: string;
+  goals: number;
+}
+
 export interface LiveMatchGroup {
-  matchLabel: string; // "Freiburg 2-0 Bremen"
+  team1: LiveMatchTeam;
+  team2: LiveMatchTeam;
   minute: string;
   status: number;
   isLive: boolean;
-  players: Array<{ name: string; points: number; team: string }>;
+  players: Array<{ name: string; points: number; team: string; photo: string | null }>;
 }
 
 export interface LiveStandingEntry {
   name: string;
   points: number;
   isYou: boolean;
+  photo: string | null;
 }
 
 export interface LiveMatchdayReport {
@@ -77,7 +85,8 @@ export async function buildLiveMatchdayReport(
       if (!groups.has(key)) {
         groups.set(key, {
           matchId: key,
-          matchLabel: `${t1Name} ${match.t1g ?? 0}-${match.t2g ?? 0} ${t2Name}`,
+          team1: { id: match.t1, name: t1Name, goals: match.t1g ?? 0 },
+          team2: { id: match.t2, name: t2Name, goals: match.t2g ?? 0 },
           minute: match.mtd ?? "?",
           status: match.st ?? 0,
           isLive: match.il === true,
@@ -88,6 +97,7 @@ export async function buildLiveMatchdayReport(
         name: p.n,
         points: p.p ?? 0,
         team: teamNames.get(p.tid) ?? p.tid,
+        photo: p.pim ?? null,
       });
     }
     myMatches.push(...groups.values());
@@ -97,7 +107,7 @@ export async function buildLiveMatchdayReport(
   if (day != null) {
     const teamcenter = await client.getUserTeamcenter(leagueId, client.userId!, day);
     for (const u of teamcenter.us ?? []) {
-      standings.push({ name: u.unm, points: u.mdp ?? 0, isYou: u.i === client.userId });
+      standings.push({ name: u.unm, points: u.mdp ?? 0, isYou: u.i === client.userId, photo: u.uim ?? null });
     }
     standings.sort((a, b) => b.points - a.points);
   }

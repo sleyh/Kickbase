@@ -1,9 +1,17 @@
-/** Mirrors supabase/functions/_shared/squad-value.ts's SquadValueReport - kept in sync by hand since the two projects don't share a build. */
+/**
+ * Mirrors supabase/functions/_shared/squad-value.ts's SquadValueReport -
+ * kept in sync by hand since the two projects don't share a build.
+ * photo/sparkline are marked optional (not just nullable) because a
+ * reports_cache row written before these fields existed won't have the
+ * keys at all - consuming components must default them, not assume
+ * presence (same reasoning as normalizeSquadValueReport() below).
+ */
 export interface CompetitorSummary {
   name: string;
   totalValue: number;
   totalDelta: number | null;
   estimatedBudget: number | null;
+  photo?: string | null;
 }
 
 export interface ValueTrendPoint {
@@ -17,7 +25,15 @@ export interface SquadValueReport {
   totalValue: number;
   netWorth: number;
   totalDelta: number;
-  players: Array<{ name: string; d1: number; attributable: boolean }>;
+  players: Array<{
+    name: string;
+    value?: number;
+    d1: number;
+    attributable: boolean;
+    photo?: string | null;
+    sparkline?: number[];
+    pos?: number | null;
+  }>;
   noHistoryYet: string[];
   competitors: CompetitorSummary[] | null;
   valueTrend: ValueTrendPoint[];
@@ -73,6 +89,8 @@ export interface MarketListingSummary {
   avgPoints: number;
   hasOwnBid: boolean;
   ownBidAmount: number | null;
+  photo?: string | null;
+  pos?: number | null;
 }
 
 export interface MarketSnapshot {
@@ -82,18 +100,26 @@ export interface MarketSnapshot {
 }
 
 /** Mirrors supabase/functions/_shared/live-matchday.ts's LiveMatchdayReport. */
+export interface LiveMatchTeam {
+  id: string;
+  name: string;
+  goals: number;
+}
+
 export interface LiveMatchGroup {
-  matchLabel: string;
+  team1: LiveMatchTeam;
+  team2: LiveMatchTeam;
   minute: string;
   status: number;
   isLive: boolean;
-  players: Array<{ name: string; points: number; team: string }>;
+  players: Array<{ name: string; points: number; team: string; photo?: string | null }>;
 }
 
 export interface LiveStandingEntry {
   name: string;
   points: number;
   isYou: boolean;
+  photo?: string | null;
 }
 
 export interface LiveMatchdayReport {

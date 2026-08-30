@@ -7,9 +7,10 @@ import { createClient } from "@/lib/supabase/client";
 import type { LiveMatchdayReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { LiveDot } from "@/components/ui/live-dot";
-import { AnimatedNumber } from "@/components/motion/animated-number";
+import { TeamBadge } from "@/components/kickbase/team-badge";
+import { PlayerCard } from "@/components/kickbase/player-card";
+import { ManagerCard } from "@/components/kickbase/manager-card";
 import { toast } from "sonner";
 
 const AUTO_POLL_MS = 30_000;
@@ -58,7 +59,7 @@ export function LiveMatchdayView() {
     <div className={`flex flex-col gap-6 transition-opacity ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+          <h1 className="flex items-center gap-2 font-heading text-2xl font-semibold tracking-tight">
             <Radio className="size-5 text-amber-500" /> Live Matchday
           </h1>
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -90,24 +91,12 @@ export function LiveMatchdayView() {
           <CardContent className="flex flex-col gap-2">
             <AnimatePresence initial={false}>
               {data.standings.map((s, i) => (
-                <motion.div
-                  key={s.name}
-                  layout
-                  transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                  className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
-                    s.isYou ? "border-primary/50 bg-primary/5" : ""
-                  }`}
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <span className="w-5 text-sm text-muted-foreground">{i + 1}</span>
-                    {s.name}
-                    {s.isYou && (
-                      <Badge variant="secondary" className="text-xs">
-                        you
-                      </Badge>
-                    )}
-                  </span>
-                  <AnimatedNumber value={s.points} className="font-semibold" />
+                <motion.div key={s.name} layout transition={{ type: "spring", stiffness: 350, damping: 30 }}>
+                  <ManagerCard
+                    variant="compact"
+                    animateValue
+                    manager={{ name: s.name, photo: s.photo, isYou: s.isYou, rank: i + 1, value: s.points }}
+                  />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -117,31 +106,30 @@ export function LiveMatchdayView() {
 
       {data?.myMatches.map((match) => (
         <Card
-          key={match.matchLabel}
+          key={`${match.team1.id}-${match.team2.id}`}
           className={match.isLive ? "shadow-[0_0_28px_var(--glow-live)] ring-1 ring-amber-500/30" : undefined}
         >
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               {match.isLive && <LiveDot />}
-              {match.matchLabel}
+              <TeamBadge teamId={match.team1.id} teamName={match.team1.name} size="sm" />
+              <span>
+                {match.team1.name} {match.team1.goals}-{match.team2.goals} {match.team2.name}
+              </span>
+              <TeamBadge teamId={match.team2.id} teamName={match.team2.name} size="sm" />
               <span className="text-sm font-normal text-muted-foreground">min {match.minute}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2">
+          <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {match.players
               .sort((a, b) => b.points - a.points)
               .map((p, i) => (
-                <motion.div
-                  key={p.name}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2"
-                >
-                  <span>
-                    {p.name} <span className="text-xs text-muted-foreground">({p.team})</span>
-                  </span>
-                  <AnimatedNumber value={p.points} className="font-semibold" />
+                <motion.div key={p.name} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}>
+                  <PlayerCard
+                    variant="compact"
+                    animateValue
+                    player={{ name: p.name, photo: p.photo, team: p.team, points: p.points }}
+                  />
                 </motion.div>
               ))}
           </CardContent>

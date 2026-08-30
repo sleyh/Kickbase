@@ -30,6 +30,8 @@ export interface MarketListingSummary {
   avgPoints: number;
   hasOwnBid: boolean;
   ownBidAmount: number | null;
+  photo: string | null;
+  pos: number | null;
 }
 
 export interface MarketSnapshot {
@@ -53,6 +55,8 @@ export function buildMarketSnapshot(leagueName: string, marketItems: any[]): Mar
     avgPoints: item.ap ?? 0,
     hasOwnBid: (item.ofc ?? 0) > 0,
     ownBidAmount: item.uop ?? null,
+    photo: item.pim ?? null,
+    pos: item.pos ?? null,
   }));
 
   const notable = summaries

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { RefreshCw, TrendingUp, Send } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { compact } from "@/lib/format";
 import type { MarketSnapshot } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PlayerCard } from "@/components/kickbase/player-card";
 import { toast } from "sonner";
 
 export function MarketAlertsView({
@@ -54,7 +55,7 @@ export function MarketAlertsView({
     <div className={`flex flex-col gap-6 transition-opacity ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{data.leagueName}</h1>
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">{data.leagueName}</h1>
           <p className="text-sm text-muted-foreground">
             A live snapshot, not a diff since your last check
             {lastGenerated && ` · Updated ${new Date(lastGenerated).toLocaleString()}`}
@@ -75,10 +76,11 @@ export function MarketAlertsView({
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {data.ownBids.map((p) => (
-              <div key={p.name} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                <span className="font-medium">{p.name}</span>
-                <span>{compact(p.ownBidAmount ?? 0)}</span>
-              </div>
+              <PlayerCard
+                key={p.name}
+                variant="compact"
+                player={{ name: p.name, photo: p.photo, pos: p.pos, value: p.ownBidAmount }}
+              />
             ))}
           </CardContent>
         </Card>
@@ -88,27 +90,30 @@ export function MarketAlertsView({
         <CardHeader>
           <CardTitle>Notable listings</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        <CardContent>
           {data.notable.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nothing rising or scoring right now.</p>
           ) : (
-            data.notable.map((p) => (
-              <div key={p.name} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                <div className="flex items-center gap-2">
-                  {p.rising && <TrendingUp className="size-3.5 text-green-600 dark:text-green-400" />}
-                  <span className="font-medium">{p.name}</span>
-                  {p.hasOwnBid && (
-                    <Badge variant="secondary" className="text-xs">
-                      you bid
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                  <span>{p.avgPoints} avg pts</span>
-                  <span className="font-medium text-foreground">{compact(p.price)}</span>
-                </div>
-              </div>
-            ))
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {data.notable.map((p, i) => (
+                <motion.div key={p.name} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
+                  <PlayerCard
+                    player={{ name: p.name, photo: p.photo, pos: p.pos, value: p.price }}
+                    caption={`${p.avgPoints} avg pts`}
+                    badge={
+                      <div className="flex items-center gap-1">
+                        {p.rising && <TrendingUp className="size-3.5 text-green-600 dark:text-green-400" />}
+                        {p.hasOwnBid && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            you bid
+                          </Badge>
+                        )}
+                      </div>
+                    }
+                  />
+                </motion.div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

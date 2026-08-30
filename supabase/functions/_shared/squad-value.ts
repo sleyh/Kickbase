@@ -115,6 +115,15 @@ export interface ValueTrendPoint {
   totalValue: number;
 }
 
+/** A player's own recent market-value points (up to the last 7 days), from the same _historyEntries enrichWithHistory() already stashed - for a per-player sparkline, no extra fetch. */
+function playerSparkline(entries: any[]): number[] {
+  return [...(entries ?? [])]
+    .filter((e) => e?.mv != null && e?.dt != null)
+    .sort((a, b) => a.dt - b.dt)
+    .slice(-7)
+    .map((e) => e.mv);
+}
+
 /**
  * Squad-wide value per day for roughly the last two weeks, built from the
  * same getMarketValueHistory() entries enrichWithHistory() already
@@ -198,6 +207,7 @@ export interface CompetitorSummary {
   totalValue: number;
   totalDelta: number | null;
   estimatedBudget: number | null;
+  photo: string | null;
 }
 
 /**
@@ -226,12 +236,14 @@ export async function fetchCompetitors(
       const managerName = manager.n ?? "?";
       if (!managerId || managerId === client.userId) return;
 
-      let squad: any[];
+      let squadResponse: any;
       try {
-        squad = (await client.getManagerSquad(leagueId, managerId)).it ?? [];
+        squadResponse = await client.getManagerSquad(leagueId, managerId);
       } catch {
         return;
       }
+      const squad: any[] = squadResponse.it ?? [];
+      const photo: string | null = squadResponse.uim ?? null;
       normalizeManagerSquadItems(squad);
       await enrichWithHistory(client, leagueId, squad);
       const totalValue = squad.reduce((sum, p) => sum + (p.mv ?? 0), 0);
@@ -250,7 +262,7 @@ export async function fetchCompetitors(
         }
       }
 
-      competitors.push({ name: managerName, totalValue, totalDelta, estimatedBudget });
+      competitors.push({ name: managerName, totalValue, totalDelta, estimatedBudget, photo });
     })
   );
 
@@ -263,7 +275,15 @@ export interface SquadValueReport {
   totalValue: number;
   netWorth: number;
   totalDelta: number;
-  players: Array<{ name: string; d1: number; attributable: boolean }>;
+  players: Array<{
+    name: string;
+    value: number;
+    d1: number;
+    attributable: boolean;
+    photo: string | null;
+    sparkline: number[];
+    pos: number | null;
+  }>;
   noHistoryYet: string[];
   competitors: CompetitorSummary[] | null;
   valueTrend: ValueTrendPoint[];
@@ -316,8 +336,12 @@ export async function buildSquadValueReport(
     totalDelta,
     players: withDelta.map((p) => ({
       name: playerName(p),
+      value: p.mv ?? 0,
       d1: p.d1,
       attributable: p.attributable !== false,
+      photo: p.pim ?? null,
+      sparkline: playerSparkline(p._historyEntries),
+      pos: p.pos ?? null,
     })),
     noHistoryYet: withoutDelta.map((p) => playerName(p)),
     competitors,

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { TrendingUp, Users, Repeat, Radio, ArrowRight, Trophy } from "lucide-react";
+import { TrendingUp, Users, Repeat, Radio, ArrowRight, Trophy, Flame } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSquadValueReport, type BonusReport } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { RealtimeRefresher } from "@/components/realtime-refresher";
 import { ValueTrendChart } from "@/components/reports/value-trend-chart";
 import { DebtCeilingGauge } from "@/components/reports/debt-ceiling-gauge";
 import { AnimatedNumber } from "@/components/motion/animated-number";
+import { PlayerCard } from "@/components/kickbase/player-card";
 
 const SHORTCUTS = [
   { href: "/dashboard/squad-value", label: "Squad Value", icon: TrendingUp },
@@ -38,12 +39,16 @@ export default async function DashboardPage() {
   ]);
 
   const squadValue = normalizeSquadValueReport(squadValueCache?.payload);
+  const biggestMover =
+    squadValue && squadValue.players.length > 0
+      ? [...squadValue.players].sort((a, b) => Math.abs(b.d1) - Math.abs(a.d1))[0]
+      : null;
 
   return (
     <div className="flex flex-col gap-6">
       <RealtimeRefresher tables={["reports_cache"]} filterUserId={user!.id} />
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">Overview</h1>
         <p className="text-muted-foreground">
           {squadValue ? squadValue.leagueName : "Everything from your Kickbase league, in one place."}
         </p>
@@ -90,6 +95,24 @@ export default async function DashboardPage() {
           <div className="col-span-2 md:col-span-2">
             <BonusCard initialData={(bonusCache?.payload as BonusReport) ?? null} />
           </div>
+
+          {biggestMover && (
+            <div className="col-span-2 flex flex-col gap-2">
+              <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Flame className="size-3.5" /> Today&apos;s biggest mover
+              </span>
+              <PlayerCard
+                player={{
+                  name: biggestMover.name,
+                  photo: biggestMover.photo,
+                  pos: biggestMover.pos,
+                  value: biggestMover.value,
+                  delta: biggestMover.d1,
+                  sparkline: biggestMover.sparkline,
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
 

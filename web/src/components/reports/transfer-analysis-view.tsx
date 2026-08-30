@@ -7,6 +7,9 @@ import { compact } from "@/lib/format";
 import type { TransferAnalysisReport, SpendingProfile } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ManagerCard } from "@/components/kickbase/manager-card";
+import { PlayerCell } from "@/components/kickbase/stat-table";
 import { toast } from "sonner";
 
 function avgOf(p: SpendingProfile): number {
@@ -17,19 +20,19 @@ function avgOf(p: SpendingProfile): number {
 
 function SpendingBadge({ avgPct }: { avgPct: number | null }) {
   if (avgPct == null) {
-    return <span className="text-sm text-muted-foreground">no computer-market buys yet</span>;
+    return <span className="text-xs text-muted-foreground">no computer-market buys yet</span>;
   }
   const [Icon, label, tone] =
     avgPct <= 3
-      ? ([Target, "pays close to asking price", "text-green-600 dark:text-green-400"] as const)
+      ? ([Target, "close to asking price", "text-green-600 dark:text-green-400"] as const)
       : avgPct <= 15
-        ? ([DollarSign, "pays a moderate premium", "text-amber-600 dark:text-amber-400"] as const)
+        ? ([DollarSign, "moderate premium", "text-amber-600 dark:text-amber-400"] as const)
         : ([Flame, "tends to overspend", "text-destructive"] as const);
   return (
-    <span className={`flex items-center gap-1.5 text-sm ${tone}`}>
-      <Icon className="size-3.5" />
+    <span className={`flex items-center gap-1.5 text-xs ${tone}`}>
+      <Icon className="size-3" />
       {label} ({avgPct >= 0 ? "+" : ""}
-      {avgPct.toFixed(0)}% avg)
+      {avgPct.toFixed(0)}%)
     </span>
   );
 }
@@ -82,7 +85,7 @@ export function TransferAnalysisView({
     <div className={`flex flex-col gap-6 transition-opacity ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{data.leagueName}</h1>
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">{data.leagueName}</h1>
           <p className="text-sm text-muted-foreground">
             Premium = price paid vs. that player&apos;s current market value
             {lastGenerated && ` · Updated ${new Date(lastGenerated).toLocaleString()}`}
@@ -98,22 +101,20 @@ export function TransferAnalysisView({
         <CardHeader>
           <CardTitle>Spending behavior</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[...data.profiles]
             .sort((a, b) => avgOf(b) - avgOf(a))
             .map((profile) => {
               const buys = profile.computerBuys;
               const avg = buys.length > 0 ? buys.reduce((s, b) => s + b.premiumPct, 0) / buys.length : null;
               return (
-                <div key={profile.name} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span className="font-medium">{profile.name}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">
-                      {buys.length} computer buy{buys.length !== 1 ? "s" : ""}
-                    </span>
-                    <SpendingBadge avgPct={avg} />
-                  </div>
-                </div>
+                <ManagerCard
+                  key={profile.name}
+                  variant="compact"
+                  manager={{ name: profile.name, value: buys.length }}
+                  statSuffix={` buy${buys.length !== 1 ? "s" : ""}`}
+                  badge={<SpendingBadge avgPct={avg} />}
+                />
               );
             })}
         </CardContent>
@@ -126,18 +127,38 @@ export function TransferAnalysisView({
               <Handshake className="size-4" /> Manager-to-manager trades
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {managerTrades.map(({ name, b }, i) => (
-              <div key={i} className="rounded-lg border px-3 py-2 text-sm">
-                <span className="font-medium">{name}</span> paid{" "}
-                <span className={b.premiumPct >= 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}>
-                  {b.premiumPct >= 0 ? "+" : ""}
-                  {b.premiumPct.toFixed(0)}%
-                </span>{" "}
-                vs. value for <span className="font-medium">{b.playerName}</span> ({compact(b.trp)} vs.{" "}
-                {compact(b.mv)}) — bought from {b.othnm}
-              </div>
-            ))}
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Player</TableHead>
+                  <TableHead>Bought from</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Market value</TableHead>
+                  <TableHead className="text-right">Premium</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {managerTrades.map(({ name, b }, i) => (
+                  <TableRow key={i}>
+                    <PlayerCell name={b.playerName} subtitle={`bought by ${name}`} />
+                    <TableCell className="text-muted-foreground">{b.othnm}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{compact(b.trp)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                      {compact(b.mv)}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-mono tabular-nums ${
+                        b.premiumPct >= 0 ? "text-destructive" : "text-green-600 dark:text-green-400"
+                      }`}
+                    >
+                      {b.premiumPct >= 0 ? "+" : ""}
+                      {b.premiumPct.toFixed(0)}%
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
