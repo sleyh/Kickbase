@@ -515,3 +515,21 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/manager-detail/deno.json"
 entrypoint = "./functions/manager-detail/index.ts"
+
+[functions.market-action]
+enabled = true
+verify_jwt = true
+import_map = "./functions/market-action/deno.json"
+entrypoint = "./functions/market-action/index.ts"
+
+[functions.scout-list]
+enabled = true
+verify_jwt = true
+import_map = "./functions/scout-list/deno.json"
+entrypoint = "./functions/scout-list/index.ts"
+
+[functions.market-full]
+enabled = true
+verify_jwt = true
+import_map = "./functions/market-full/deno.json"
+entrypoint = "./functions/market-full/index.ts"
