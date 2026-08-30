@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { HealthTile } from "@/components/admin/health-tile";
+import { AnimatedNumber } from "@/components/motion/animated-number";
 import { toast } from "sonner";
 
 const REPORT_TYPE_LABELS: Record<ReportType, string> = {
@@ -129,7 +130,10 @@ export function AdminDashboard({
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
           <ShieldCheck className="size-5" /> Admin
         </h1>
-        <p className="text-sm text-muted-foreground">{users.length} user{users.length === 1 ? "" : "s"} · manage accounts, run jobs on demand, watch the logs.</p>
+        <p className="text-sm text-muted-foreground">
+          <AnimatedNumber value={users.length} /> user{users.length === 1 ? "" : "s"} · manage accounts, run jobs on
+          demand, watch the logs.
+        </p>
       </div>
 
       <Tabs defaultValue="users">
@@ -304,7 +308,9 @@ export function AdminDashboard({
                 <option value="failed">Failed</option>
                 <option value="running">Running</option>
               </select>
-              <span className="ml-auto text-sm text-muted-foreground">{filteredRuns.length} runs</span>
+              <span className="ml-auto text-sm text-muted-foreground">
+                <AnimatedNumber value={filteredRuns.length} /> runs
+              </span>
             </CardHeader>
             <CardContent>
               <Table>

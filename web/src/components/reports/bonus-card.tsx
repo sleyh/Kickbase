@@ -7,6 +7,7 @@ import { compact } from "@/lib/format";
 import type { BonusReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { celebrate } from "@/lib/celebrate";
 import { toast } from "sonner";
 
 export function BonusCard({ initialData }: { initialData: BonusReport | null }) {
@@ -27,6 +28,7 @@ export function BonusCard({ initialData }: { initialData: BonusReport | null }) 
     setData(result);
     if (result.collected) {
       toast.success(`Collected ${compact(result.amount)}!`);
+      celebrate("small");
     } else {
       toast.info("Nothing to collect right now.");
     }

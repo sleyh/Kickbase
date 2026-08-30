@@ -1,17 +1,20 @@
 import Link from "next/link";
-import { TrendingUp, Users, Repeat, Radio, ArrowRight } from "lucide-react";
+import { TrendingUp, Users, Repeat, Radio, ArrowRight, Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { compact, signed } from "@/lib/format";
 import type { SquadValueReport, BonusReport } from "@/lib/types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BonusCard } from "@/components/reports/bonus-card";
 import { RealtimeRefresher } from "@/components/realtime-refresher";
+import { ValueTrendChart } from "@/components/reports/value-trend-chart";
+import { DebtCeilingGauge } from "@/components/reports/debt-ceiling-gauge";
+import { AnimatedNumber } from "@/components/motion/animated-number";
 
 const SHORTCUTS = [
-  { href: "/dashboard/squad-value", label: "Squad Value", icon: TrendingUp, description: "Daily value + competitors" },
-  { href: "/dashboard/transfer-analysis", label: "Transfer Analysis", icon: Repeat, description: "Who overspends" },
-  { href: "/dashboard/live", label: "Live Matchday", icon: Radio, description: "Live points, by match" },
-  { href: "/dashboard/alerts", label: "Market Alerts", icon: Users, description: "Notable new listings" },
+  { href: "/dashboard/squad-value", label: "Squad Value", icon: TrendingUp },
+  { href: "/dashboard/transfer-analysis", label: "Transfer Analysis", icon: Repeat },
+  { href: "/dashboard/live", label: "Live Matchday", icon: Radio },
+  { href: "/dashboard/alerts", label: "Market Alerts", icon: Users },
 ] as const;
 
 export default async function DashboardPage() {
@@ -48,64 +51,79 @@ export default async function DashboardPage() {
       </div>
 
       {squadValue && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs text-muted-foreground">Squad total today</p>
-              <p
-                className={
-                  squadValue.totalDelta >= 0
-                    ? "text-lg font-semibold text-green-600 dark:text-green-400"
-                    : "text-lg font-semibold text-destructive"
-                }
-              >
-                {signed(squadValue.totalDelta)}
-              </p>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
+          <Card className="col-span-2 md:col-span-4 md:row-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="size-4" /> Squad value
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <div className="flex items-baseline gap-3">
+                <AnimatedNumber
+                  value={squadValue.totalValue}
+                  formatter={compact}
+                  className="text-3xl font-semibold"
+                />
+                <span
+                  className={
+                    squadValue.totalDelta >= 0
+                      ? "text-sm font-medium text-green-600 dark:text-green-400"
+                      : "text-sm font-medium text-destructive"
+                  }
+                >
+                  <AnimatedNumber value={squadValue.totalDelta} formatter={signed} /> today
+                </span>
+              </div>
+              {squadValue.valueTrend.length >= 2 ? (
+                <ValueTrendChart data={squadValue.valueTrend} className="h-40 w-full" />
+              ) : (
+                <p className="text-sm text-muted-foreground">Not enough history yet for a trend line.</p>
+              )}
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs text-muted-foreground">Budget</p>
-              <p className="text-lg font-semibold">{compact(squadValue.budget)}</p>
+
+          <Card className="col-span-2 md:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">Debt ceiling</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DebtCeilingGauge budget={squadValue.budget} totalValue={squadValue.totalValue} />
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs text-muted-foreground">Squad value</p>
-              <p className="text-lg font-semibold">{compact(squadValue.totalValue)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs text-muted-foreground">Total value</p>
-              <p className="text-lg font-semibold">{compact(squadValue.netWorth)}</p>
-            </CardContent>
-          </Card>
+
+          <div className="col-span-2 md:col-span-2">
+            <BonusCard initialData={(bonusCache?.payload as BonusReport) ?? null} />
+          </div>
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {SHORTCUTS.map((s) => (
           <Link key={s.href} href={s.href}>
-            <Card className="transition-colors hover:bg-muted/50">
-              <CardHeader className="flex-row items-center justify-between space-y-0">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-muted p-2">
-                    <s.icon className="size-4 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{s.label}</CardTitle>
-                    <CardDescription>{s.description}</CardDescription>
-                  </div>
+            <Card className="transition-colors hover:bg-muted/50 hover:shadow-[0_0_24px_var(--glow-primary)]">
+              <CardContent className="flex flex-col items-center gap-2 py-6 text-center">
+                <div className="rounded-full bg-accent p-2.5">
+                  <s.icon className="size-4 text-accent-foreground" />
                 </div>
-                <ArrowRight className="size-4 text-muted-foreground" />
-              </CardHeader>
+                <span className="flex items-center gap-1 text-sm font-medium">
+                  {s.label}
+                  <ArrowRight className="size-3.5 text-muted-foreground" />
+                </span>
+              </CardContent>
             </Card>
           </Link>
         ))}
       </div>
 
-      <BonusCard initialData={(bonusCache?.payload as BonusReport) ?? null} />
+      {!squadValue && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
+            <Trophy className="size-6" />
+            No squad value data cached yet - open Squad Value to fetch it.
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

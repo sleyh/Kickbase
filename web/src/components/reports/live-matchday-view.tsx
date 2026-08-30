@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCw, Radio, Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { LiveMatchdayReport } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LiveDot } from "@/components/ui/live-dot";
+import { AnimatedNumber } from "@/components/motion/animated-number";
 import { toast } from "sonner";
+
+const AUTO_POLL_MS = 30_000;
 
 export function LiveMatchdayView() {
   const supabase = createClient();
@@ -37,15 +41,29 @@ export function LiveMatchdayView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const anyLive = data?.myMatches.some((m) => m.isLive) ?? false;
+
+  useEffect(() => {
+    // Only poll while there's something actually live to poll for -
+    // otherwise this would keep hitting the endpoint after full time for
+    // no reason. Same "not in deps" reasoning as the mount effect above:
+    // load()'s identity changes every render.
+    if (!anyLive) return;
+    const interval = setInterval(load, AUTO_POLL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyLive]);
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className={`flex flex-col gap-6 transition-opacity ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Radio className="size-5 text-red-500" /> Live Matchday
+            <Radio className="size-5 text-amber-500" /> Live Matchday
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
             {data?.day != null ? `Matchday ${data.day}` : "Real-time points, straight from the pitch"}
+            {anyLive && <LiveDot />}
           </p>
         </div>
         <Button variant="outline" onClick={load} disabled={loading}>
@@ -70,34 +88,41 @@ export function LiveMatchdayView() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
-            {data.standings.map((s, i) => (
-              <div
-                key={s.name}
-                className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
-                  s.isYou ? "border-primary/50 bg-primary/5" : ""
-                }`}
-              >
-                <span className="flex items-center gap-2 font-medium">
-                  <span className="w-5 text-sm text-muted-foreground">{i + 1}</span>
-                  {s.name}
-                  {s.isYou && (
-                    <Badge variant="secondary" className="text-xs">
-                      you
-                    </Badge>
-                  )}
-                </span>
-                <span className="font-semibold">{s.points}</span>
-              </div>
-            ))}
+            <AnimatePresence initial={false}>
+              {data.standings.map((s, i) => (
+                <motion.div
+                  key={s.name}
+                  layout
+                  transition={{ type: "spring", stiffness: 350, damping: 30 }}
+                  className={`flex items-center justify-between rounded-lg border px-3 py-2 ${
+                    s.isYou ? "border-primary/50 bg-primary/5" : ""
+                  }`}
+                >
+                  <span className="flex items-center gap-2 font-medium">
+                    <span className="w-5 text-sm text-muted-foreground">{i + 1}</span>
+                    {s.name}
+                    {s.isYou && (
+                      <Badge variant="secondary" className="text-xs">
+                        you
+                      </Badge>
+                    )}
+                  </span>
+                  <AnimatedNumber value={s.points} className="font-semibold" />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </CardContent>
         </Card>
       )}
 
       {data?.myMatches.map((match) => (
-        <Card key={match.matchLabel}>
+        <Card
+          key={match.matchLabel}
+          className={match.isLive ? "shadow-[0_0_28px_var(--glow-live)] ring-1 ring-amber-500/30" : undefined}
+        >
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              {match.isLive && <span className="size-2 animate-pulse rounded-full bg-red-500" />}
+              {match.isLive && <LiveDot />}
               {match.matchLabel}
               <span className="text-sm font-normal text-muted-foreground">min {match.minute}</span>
             </CardTitle>
@@ -116,7 +141,7 @@ export function LiveMatchdayView() {
                   <span>
                     {p.name} <span className="text-xs text-muted-foreground">({p.team})</span>
                   </span>
-                  <span className="font-semibold">{p.points}</span>
+                  <AnimatedNumber value={p.points} className="font-semibold" />
                 </motion.div>
               ))}
           </CardContent>

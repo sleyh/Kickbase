@@ -85,7 +85,10 @@ export function normalizeManagerSquadItems(items: any[]): any[] {
 
 /**
  * Mutates each player in place, attaching real d1/d7/d1WindowStartDay
- * from Kickbase's own history endpoint.
+ * from Kickbase's own history endpoint. Also stashes the raw per-day
+ * entries under _historyEntries - not part of any public report shape
+ * (every payload builds its own explicit object), just there for
+ * buildValueTrend() below to sum without a second round of API calls.
  */
 export async function enrichWithHistory(
   client: KickbaseClient,
@@ -99,11 +102,39 @@ export async function enrichWithHistory(
       try {
         const history = await client.getMarketValueHistory(leagueId, playerId);
         Object.assign(player, historyDeltas(history));
+        player._historyEntries = history?.it ?? [];
       } catch (err) {
         if (!(err instanceof KickbaseError)) throw err;
       }
     })
   );
+}
+
+export interface ValueTrendPoint {
+  day: number;
+  totalValue: number;
+}
+
+/**
+ * Squad-wide value per day for roughly the last two weeks, built from the
+ * same getMarketValueHistory() entries enrichWithHistory() already
+ * fetched for d1/d7 - no extra API calls. Sums whichever players have a
+ * value for a given day (not ownership-filtered like the d1 attribution
+ * logic above - a simpler "what was the squad worth" trend line, not a
+ * "what did I gain" one).
+ */
+export function buildValueTrend(players: any[]): ValueTrendPoint[] {
+  const byDay = new Map<number, number>();
+  for (const player of players) {
+    for (const entry of player._historyEntries ?? []) {
+      if (entry?.dt == null || entry?.mv == null) continue;
+      byDay.set(entry.dt, (byDay.get(entry.dt) ?? 0) + entry.mv);
+    }
+  }
+  return [...byDay.keys()]
+    .sort((a, b) => a - b)
+    .slice(-14)
+    .map((day) => ({ day, totalValue: byDay.get(day)! }));
 }
 
 /** Every transfer for a manager, walking pagination fully. */
@@ -235,6 +266,7 @@ export interface SquadValueReport {
   players: Array<{ name: string; d1: number; attributable: boolean }>;
   noHistoryYet: string[];
   competitors: CompetitorSummary[] | null;
+  valueTrend: ValueTrendPoint[];
 }
 
 function playerName(player: any): string {
@@ -289,5 +321,6 @@ export async function buildSquadValueReport(
     })),
     noHistoryYet: withoutDelta.map((p) => playerName(p)),
     competitors,
+    valueTrend: buildValueTrend(squad),
   };
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { BRAND_MARK_SVG } from "@/lib/brand-mark";
 
 export function Topbar({ email, isAdmin }: { email: string; isAdmin: boolean }) {
   const router = useRouter();
@@ -24,6 +25,10 @@ export function Topbar({ email, isAdmin }: { email: string; isAdmin: boolean }) 
     <header className="flex h-14 items-center justify-between border-b px-4">
       <div className="flex items-center gap-2">
         <MobileNav isAdmin={isAdmin} />
+        <span
+          className="size-6 shrink-0 [&>svg]:size-6"
+          dangerouslySetInnerHTML={{ __html: BRAND_MARK_SVG }}
+        />
         <span className="text-sm font-semibold tracking-tight">Kickbase Assistant</span>
       </div>
       <div className="flex items-center gap-1">

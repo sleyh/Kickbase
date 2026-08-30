@@ -6,6 +6,11 @@ export interface CompetitorSummary {
   estimatedBudget: number | null;
 }
 
+export interface ValueTrendPoint {
+  day: number;
+  totalValue: number;
+}
+
 export interface SquadValueReport {
   leagueName: string;
   budget: number;
@@ -15,6 +20,7 @@ export interface SquadValueReport {
   players: Array<{ name: string; d1: number; attributable: boolean }>;
   noHistoryYet: string[];
   competitors: CompetitorSummary[] | null;
+  valueTrend: ValueTrendPoint[];
 }
 
 export const DEBT_CEILING_RATIO = 0.33;

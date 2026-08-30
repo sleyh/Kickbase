@@ -11,7 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { ValueTrendChart } from "@/components/reports/value-trend-chart";
+import { AnimatedNumber } from "@/components/motion/animated-number";
+import { celebrate } from "@/lib/celebrate";
 import { toast } from "sonner";
+
+const BIG_WIN_THRESHOLD = 500_000;
 
 const chartConfig = {
   value: { label: "Squad value", color: "var(--chart-1)" },
@@ -25,7 +30,7 @@ function StatCard({
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  value: string;
+  value: React.ReactNode;
   tone?: "positive" | "negative";
 }) {
   return (
@@ -76,6 +81,12 @@ export function SquadValueView({
       toast.error(result?.error ?? error?.message ?? "Couldn't refresh.");
       return;
     }
+    // Only a client-triggered refresh that reveals a real jump earns
+    // confetti - never the initial server-rendered load, and never a
+    // negative or merely-positive delta.
+    if (data && result.totalDelta > data.totalDelta && result.totalDelta >= BIG_WIN_THRESHOLD) {
+      celebrate("big");
+    }
     setData(result);
     setLastGenerated(new Date().toISOString());
   }
@@ -100,7 +111,7 @@ export function SquadValueView({
   ].sort((a, b) => b.value - a.value);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className={`flex flex-col gap-6 transition-opacity ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{data.leagueName}</h1>
@@ -120,13 +131,33 @@ export function SquadValueView({
         <StatCard
           icon={data.totalDelta >= 0 ? TrendingUp : TrendingDown}
           label="Squad total today"
-          value={signed(data.totalDelta)}
+          value={<AnimatedNumber value={data.totalDelta} formatter={signed} />}
           tone={data.totalDelta >= 0 ? "positive" : "negative"}
         />
-        <StatCard icon={Wallet} label="Budget" value={compact(data.budget)} tone={data.budget < 0 ? "negative" : undefined} />
-        <StatCard icon={Trophy} label="Squad value" value={compact(data.totalValue)} />
-        <StatCard icon={PiggyBank} label="Total (budget + squad)" value={compact(data.netWorth)} />
+        <StatCard
+          icon={Wallet}
+          label="Budget"
+          value={<AnimatedNumber value={data.budget} formatter={compact} />}
+          tone={data.budget < 0 ? "negative" : undefined}
+        />
+        <StatCard icon={Trophy} label="Squad value" value={<AnimatedNumber value={data.totalValue} formatter={compact} />} />
+        <StatCard
+          icon={PiggyBank}
+          label="Total (budget + squad)"
+          value={<AnimatedNumber value={data.netWorth} formatter={compact} />}
+        />
       </div>
+
+      {data.valueTrend.length >= 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Squad value, last {data.valueTrend.length} days</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ValueTrendChart data={data.valueTrend} />
+          </CardContent>
+        </Card>
+      )}
 
       {data.competitors && data.competitors.length > 0 && (
         <Card>

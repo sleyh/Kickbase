@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { BRAND_MARK_DATA_URL } from "@/lib/brand-mark";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,6 +18,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Kickbase Assistant",
   description: "Live squad value, competitor intel, and market alerts for your Kickbase league.",
+  icons: { icon: BRAND_MARK_DATA_URL },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f1710",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -27,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           {children}
           <Toaster />
         </ThemeProvider>
