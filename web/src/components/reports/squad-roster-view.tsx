@@ -10,6 +10,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PlayerCell } from "@/components/kickbase/stat-table";
+import { PlayerCard } from "@/components/kickbase/player-card";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/lib/use-view-mode";
 import { toast } from "sonner";
 
 type SortKey = "name" | "value" | "d1" | "d7" | "points" | "rating";
@@ -53,6 +56,7 @@ export function SquadRosterView({
     key: "rating",
     direction: "desc",
   });
+  const [viewMode, setViewMode] = useViewMode("squad");
 
   async function refresh() {
     setLoading(true);
@@ -112,12 +116,38 @@ export function SquadRosterView({
             {lastGenerated && ` · Updated ${new Date(lastGenerated).toLocaleString()}`}
           </p>
         </div>
-        <Button variant="outline" onClick={refresh} disabled={loading}>
-          <RefreshCw className={loading ? "animate-spin" : ""} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
+          <Button variant="outline" onClick={refresh} disabled={loading}>
+            <RefreshCw className={loading ? "animate-spin" : ""} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
+      {viewMode === "cards" ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {rows.map((p) => (
+            <PlayerCard
+              key={p.id ?? p.name}
+              player={{ name: p.name, photo: p.photo, pos: p.pos, value: p.value }}
+              caption={p.points != null ? `${p.points} pts` : undefined}
+              href={p.id ? `/dashboard/player/${p.id}` : undefined}
+              extra={
+                <div className="grid grid-cols-3 items-center gap-x-2 border-t px-4 py-2 text-xs">
+                  <span className="text-muted-foreground">
+                    24h <span className={deltaClass(p.d1)}>{signed(p.d1)}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    7d <span className={deltaClass(p.d7)}>{p.d7 != null ? signed(p.d7) : "—"}</span>
+                  </span>
+                  <RatingBadge rating={p.rating ?? 0} />
+                </div>
+              }
+            />
+          ))}
+        </div>
+      ) : (
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -164,6 +194,7 @@ export function SquadRosterView({
           </Table>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

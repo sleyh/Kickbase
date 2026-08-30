@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { PlayerCell } from "@/components/kickbase/stat-table";
 import { PlayerCard } from "@/components/kickbase/player-card";
 import { PlayerActionsMenu } from "@/components/kickbase/player-actions-menu";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/lib/use-view-mode";
 import { toast } from "sonner";
 
 type Tab = "all" | "bids" | "scouted";
@@ -57,6 +59,7 @@ export function MarketView() {
     key: "expiresInSeconds",
     direction: "asc",
   });
+  const [viewMode, setViewMode] = useViewMode("market");
   const [scoutedIds, setScoutedIds] = useState<Set<string>>(new Set());
   const [scoutedPlayers, setScoutedPlayers] = useState<PlayerDetailReport[] | null>(null);
   const [scoutedLoading, setScoutedLoading] = useState(false);
@@ -169,6 +172,51 @@ export function MarketView() {
     );
   }
 
+  function renderCard(p: MarketListingSummary) {
+    return (
+      <PlayerCard
+        key={p.id ?? p.name}
+        player={{ name: p.name, photo: p.photo, pos: p.pos, team: p.teamName, value: p.price }}
+        caption={`${p.avgPoints} avg pts`}
+        href={p.id ? `/dashboard/player/${p.id}` : undefined}
+        badge={
+          p.hasOwnBid ? (
+            <Badge variant="secondary" className="text-[10px]">
+              <Send className="size-3" /> {p.ownBidAmount != null ? compact(p.ownBidAmount) : "you bid"}
+            </Badge>
+          ) : undefined
+        }
+        menu={
+          p.id && (
+            <PlayerActionsMenu
+              playerId={p.id}
+              playerName={p.name}
+              marketValue={p.marketValue}
+              variant="market"
+              isScouted={scoutedIds.has(p.id)}
+              onScoutChange={(scouted) => handleScoutChange(p.id!, scouted)}
+              onActionComplete={load}
+            />
+          )
+        }
+        extra={
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 border-t px-4 py-2 text-xs">
+            <span className="text-muted-foreground">
+              24h <span className={deltaClass(p.d1)}>{p.d1 != null ? signed(p.d1) : "—"}</span>
+            </span>
+            <span className="text-muted-foreground">
+              7d <span className={deltaClass(p.d7)}>{p.d7 != null ? signed(p.d7) : "—"}</span>
+            </span>
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <TrendIcon trend={p.trend} /> trend
+            </span>
+            <span className="text-muted-foreground">closes {closesIn(p.expiresInSeconds)}</span>
+          </div>
+        }
+      />
+    );
+  }
+
   return (
     <div className={`flex flex-col gap-6 transition-opacity ${loading ? "pointer-events-none opacity-60" : ""}`}>
       <div className="flex items-center justify-between">
@@ -184,27 +232,30 @@ export function MarketView() {
         </Button>
       </div>
 
-      <div className="flex gap-1 rounded-lg border p-1 w-fit">
-        {(
-          [
-            { key: "all", label: "All listings" },
-            { key: "bids", label: "Your bids" },
-            { key: "scouted", label: "Scouted" },
-          ] as const
-        ).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => {
-              setTab(t.key);
-              if (t.key === "scouted" && scoutedPlayers == null) loadScouted();
-            }}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 rounded-lg border p-1 w-fit">
+          {(
+            [
+              { key: "all", label: "All listings" },
+              { key: "bids", label: "Your bids" },
+              { key: "scouted", label: "Scouted" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => {
+                setTab(t.key);
+                if (t.key === "scouted" && scoutedPlayers == null) loadScouted();
+              }}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {tab !== "scouted" && <ViewToggle mode={viewMode} onChange={setViewMode} />}
       </div>
 
       {tab !== "scouted" ? (
@@ -224,6 +275,8 @@ export function MarketView() {
               {tab === "bids" ? "You don't have any active bids." : "Nothing on the market right now."}
             </CardContent>
           </Card>
+        ) : viewMode === "cards" ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{rows.map(renderCard)}</div>
         ) : (
           <Card>
             <CardContent className="p-0">

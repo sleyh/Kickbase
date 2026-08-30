@@ -46,3 +46,20 @@ export function PlayerCell({
     </TableCell>
   );
 }
+
+/** Same as PlayerCell, minus the position ring - for manager/competitor tables. */
+export function ManagerCell({
+  name,
+  photo,
+  subtitle,
+  href,
+  className,
+}: {
+  name: string;
+  photo?: string | null;
+  subtitle?: string | null;
+  href?: string;
+  className?: string;
+}) {
+  return <PlayerCell name={name} photo={photo} subtitle={subtitle} href={href} className={className} />;
+}

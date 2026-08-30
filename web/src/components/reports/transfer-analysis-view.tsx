@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ManagerCard } from "@/components/kickbase/manager-card";
-import { PlayerCell } from "@/components/kickbase/stat-table";
+import { PlayerCard } from "@/components/kickbase/player-card";
+import { PlayerCell, ManagerCell } from "@/components/kickbase/stat-table";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/lib/use-view-mode";
 import { toast } from "sonner";
 
 function avgOf(p: SpendingProfile): number {
@@ -48,6 +51,8 @@ export function TransferAnalysisView({
   const [data, setData] = useState(initialData);
   const [lastGenerated, setLastGenerated] = useState(generatedAt);
   const [loading, setLoading] = useState(false);
+  const [spendingView, setSpendingView] = useViewMode("transfer-spending");
+  const [tradesView, setTradesView] = useViewMode("transfer-trades", "table");
 
   async function refresh() {
     setLoading(true);
@@ -98,73 +103,130 @@ export function TransferAnalysisView({
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle>Spending behavior</CardTitle>
+          <ViewToggle mode={spendingView} onChange={setSpendingView} />
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[...data.profiles]
-            .sort((a, b) => avgOf(b) - avgOf(a))
-            .map((profile) => {
-              const buys = profile.computerBuys;
-              const avg = buys.length > 0 ? buys.reduce((s, b) => s + b.premiumPct, 0) / buys.length : null;
-              return (
-                <ManagerCard
-                  key={profile.name}
-                  variant="compact"
-                  manager={{ name: profile.name, value: buys.length }}
-                  statSuffix={` buy${buys.length !== 1 ? "s" : ""}`}
-                  badge={<SpendingBadge avgPct={avg} />}
-                  href={profile.id ? `/dashboard/manager/${profile.id}` : undefined}
-                />
-              );
-            })}
-        </CardContent>
+        {spendingView === "cards" ? (
+          <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[...data.profiles]
+              .sort((a, b) => avgOf(b) - avgOf(a))
+              .map((profile) => {
+                const buys = profile.computerBuys;
+                const avg = buys.length > 0 ? buys.reduce((s, b) => s + b.premiumPct, 0) / buys.length : null;
+                return (
+                  <ManagerCard
+                    key={profile.name}
+                    variant="compact"
+                    manager={{ name: profile.name, value: buys.length }}
+                    statSuffix={` buy${buys.length !== 1 ? "s" : ""}`}
+                    badge={<SpendingBadge avgPct={avg} />}
+                    href={profile.id ? `/dashboard/manager/${profile.id}` : undefined}
+                  />
+                );
+              })}
+          </CardContent>
+        ) : (
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Manager</TableHead>
+                  <TableHead className="text-right">Buys</TableHead>
+                  <TableHead>Behavior</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...data.profiles]
+                  .sort((a, b) => avgOf(b) - avgOf(a))
+                  .map((profile) => {
+                    const buys = profile.computerBuys;
+                    const avg = buys.length > 0 ? buys.reduce((s, b) => s + b.premiumPct, 0) / buys.length : null;
+                    return (
+                      <TableRow key={profile.name}>
+                        <ManagerCell name={profile.name} href={profile.id ? `/dashboard/manager/${profile.id}` : undefined} />
+                        <TableCell className="text-right font-mono tabular-nums">{buys.length}</TableCell>
+                        <TableCell>
+                          <SpendingBadge avgPct={avg} />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        )}
       </Card>
 
       {managerTrades.length > 0 && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="flex items-center gap-2">
               <Handshake className="size-4" /> Manager-to-manager trades
             </CardTitle>
+            <ViewToggle mode={tradesView} onChange={setTradesView} />
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Player</TableHead>
-                  <TableHead>Bought from</TableHead>
-                  <TableHead className="text-right">Paid</TableHead>
-                  <TableHead className="text-right">Market value</TableHead>
-                  <TableHead className="text-right">Premium</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {managerTrades.map(({ name, b }, i) => (
-                  <TableRow key={i}>
-                    <PlayerCell
-                      name={b.playerName}
-                      subtitle={`bought by ${name}`}
-                      href={b.playerId ? `/dashboard/player/${b.playerId}` : undefined}
-                    />
-                    <TableCell className="text-muted-foreground">{b.othnm}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{compact(b.trp)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                      {compact(b.mv)}
-                    </TableCell>
-                    <TableCell
-                      className={`text-right font-mono tabular-nums ${
+          {tradesView === "cards" ? (
+            <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {managerTrades.map(({ name, b }, i) => (
+                <PlayerCard
+                  key={i}
+                  variant="compact"
+                  player={{ name: b.playerName, value: b.trp }}
+                  caption={`bought by ${name}`}
+                  href={b.playerId ? `/dashboard/player/${b.playerId}` : undefined}
+                  badge={
+                    <span
+                      className={`text-xs font-mono tabular-nums ${
                         b.premiumPct >= 0 ? "text-destructive" : "text-green-600 dark:text-green-400"
                       }`}
                     >
                       {b.premiumPct >= 0 ? "+" : ""}
                       {b.premiumPct.toFixed(0)}%
-                    </TableCell>
+                    </span>
+                  }
+                />
+              ))}
+            </CardContent>
+          ) : (
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Player</TableHead>
+                    <TableHead>Bought from</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Market value</TableHead>
+                    <TableHead className="text-right">Premium</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
+                </TableHeader>
+                <TableBody>
+                  {managerTrades.map(({ name, b }, i) => (
+                    <TableRow key={i}>
+                      <PlayerCell
+                        name={b.playerName}
+                        subtitle={`bought by ${name}`}
+                        href={b.playerId ? `/dashboard/player/${b.playerId}` : undefined}
+                      />
+                      <TableCell className="text-muted-foreground">{b.othnm}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{compact(b.trp)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                        {compact(b.mv)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-mono tabular-nums ${
+                          b.premiumPct >= 0 ? "text-destructive" : "text-green-600 dark:text-green-400"
+                        }`}
+                      >
+                        {b.premiumPct >= 0 ? "+" : ""}
+                        {b.premiumPct.toFixed(0)}%
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          )}
         </Card>
       )}
     </div>

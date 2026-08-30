@@ -6,17 +6,27 @@ import { motion } from "framer-motion";
 import { RefreshCw, TrendingUp, TrendingDown, Wallet, PiggyBank, Trophy, Users, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { SquadValueReport } from "@/lib/types";
+import { compact, signed } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ValueTrendChart } from "@/components/reports/value-trend-chart";
 import { AnimatedNumber } from "@/components/motion/animated-number";
 import { PlayerCard } from "@/components/kickbase/player-card";
 import { PlayerActionsMenu } from "@/components/kickbase/player-actions-menu";
+import { PlayerCell } from "@/components/kickbase/stat-table";
 import { ManagerCard } from "@/components/kickbase/manager-card";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/lib/use-view-mode";
 import { celebrate } from "@/lib/celebrate";
 import { toast } from "sonner";
 
 const BIG_WIN_THRESHOLD = 500_000;
+
+function deltaClass(n: number | null | undefined): string {
+  if (n == null) return "text-muted-foreground";
+  return n > 0 ? "text-green-600 dark:text-green-400" : n < 0 ? "text-destructive" : "text-muted-foreground";
+}
 
 function StatCard({
   icon: Icon,
@@ -65,6 +75,7 @@ export function SquadValueView({
   const [data, setData] = useState(initialData);
   const [lastGenerated, setLastGenerated] = useState(generatedAt);
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useViewMode("squad-value");
 
   async function refresh() {
     setLoading(true);
@@ -155,51 +166,95 @@ export function SquadValueView({
       )}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle>Your players today</CardTitle>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {data.players.map((p, i) => (
-              <motion.div
-                key={p.name}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.03 }}
-              >
-                <PlayerCard
-                  player={{
-                    name: p.name,
-                    photo: p.photo,
-                    pos: p.pos,
-                    value: p.value,
-                    delta: p.d1,
-                    sparkline: p.sparkline,
-                  }}
-                  href={p.id ? `/dashboard/player/${p.id}` : undefined}
-                  caption={p.points != null ? `${p.points} pts` : undefined}
-                  badge={
-                    !p.attributable && (
-                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
-                        just bought
-                      </span>
-                    )
-                  }
-                  menu={
-                    p.id && (
-                      <PlayerActionsMenu
-                        playerId={p.id}
-                        playerName={p.name}
-                        marketValue={p.value}
-                        variant="owned"
-                        onActionComplete={refresh}
-                      />
-                    )
-                  }
-                />
-              </motion.div>
-            ))}
-          </div>
+          {viewMode === "cards" ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {data.players.map((p, i) => (
+                <motion.div
+                  key={p.name}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                >
+                  <PlayerCard
+                    player={{
+                      name: p.name,
+                      photo: p.photo,
+                      pos: p.pos,
+                      value: p.value,
+                      delta: p.d1,
+                      sparkline: p.sparkline,
+                    }}
+                    href={p.id ? `/dashboard/player/${p.id}` : undefined}
+                    caption={p.points != null ? `${p.points} pts` : undefined}
+                    badge={
+                      !p.attributable && (
+                        <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                          just bought
+                        </span>
+                      )
+                    }
+                    menu={
+                      p.id && (
+                        <PlayerActionsMenu
+                          playerId={p.id}
+                          playerName={p.name}
+                          marketValue={p.value}
+                          variant="owned"
+                          onActionComplete={refresh}
+                        />
+                      )
+                    }
+                  />
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Player</TableHead>
+                  <TableHead className="text-right">Value</TableHead>
+                  <TableHead className="text-right">24h</TableHead>
+                  <TableHead className="text-right">Points</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.players.map((p) => (
+                  <TableRow key={p.name}>
+                    <PlayerCell
+                      name={p.name}
+                      photo={p.photo}
+                      pos={p.pos}
+                      subtitle={!p.attributable ? "just bought" : undefined}
+                      href={p.id ? `/dashboard/player/${p.id}` : undefined}
+                    />
+                    <TableCell className="text-right font-mono tabular-nums">{compact(p.value ?? 0)}</TableCell>
+                    <TableCell className={`text-right font-mono tabular-nums ${deltaClass(p.d1)}`}>
+                      {signed(p.d1)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{p.points ?? "—"}</TableCell>
+                    <TableCell className="text-right">
+                      {p.id && (
+                        <PlayerActionsMenu
+                          playerId={p.id}
+                          playerName={p.name}
+                          marketValue={p.value}
+                          variant="owned"
+                          onActionComplete={refresh}
+                        />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
           {data.noHistoryYet.length > 0 && (
             <p className="mt-4 text-sm text-muted-foreground">
               No value history yet: {data.noHistoryYet.join(", ")}

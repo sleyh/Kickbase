@@ -34,6 +34,7 @@ export function PlayerCard({
   animateValue = false,
   href,
   menu,
+  extra,
   className,
 }: {
   player: PlayerCardData;
@@ -47,6 +48,8 @@ export function PlayerCard({
   href?: string;
   /** An action-menu trigger (e.g. PlayerActionsMenu) rendered in a corner. Clicks on it never trigger href navigation. */
   menu?: ReactNode;
+  /** Full variant only - a footer block below the value/delta/sparkline row, for page-specific extra stats (mirrors ManagerCard's `extra`). */
+  extra?: ReactNode;
   className?: string;
 }) {
   const stopNavigation = (e: MouseEvent) => {
@@ -156,6 +159,7 @@ export function PlayerCard({
             <Sparkline points={player.sparkline} className="h-8 w-20" />
           )}
         </div>
+        {extra}
       </div>
     );
 

@@ -2,15 +2,27 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { RefreshCw, TrendingUp, Send } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Minus, Send } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { MarketSnapshot } from "@/lib/types";
+import { compact } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PlayerCard } from "@/components/kickbase/player-card";
 import { PlayerActionsMenu } from "@/components/kickbase/player-actions-menu";
+import { PlayerCell } from "@/components/kickbase/stat-table";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/lib/use-view-mode";
 import { toast } from "sonner";
+
+function TrendIcon({ rising, trend }: { rising: boolean; trend?: "up" | "down" | "flat" }) {
+  const resolved = trend ?? (rising ? "up" : "flat");
+  if (resolved === "up") return <TrendingUp className="size-3.5 text-green-600 dark:text-green-400" />;
+  if (resolved === "down") return <TrendingDown className="size-3.5 text-destructive" />;
+  return <Minus className="size-3.5 text-muted-foreground" />;
+}
 
 export function MarketAlertsView({
   initialData,
@@ -23,6 +35,7 @@ export function MarketAlertsView({
   const [data, setData] = useState(initialData);
   const [lastGenerated, setLastGenerated] = useState(generatedAt);
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useViewMode("market-alerts");
 
   async function refresh() {
     setLoading(true);
@@ -100,13 +113,14 @@ export function MarketAlertsView({
       )}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle>Notable listings</CardTitle>
+          <ViewToggle mode={viewMode} onChange={setViewMode} />
         </CardHeader>
         <CardContent>
           {data.notable.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nothing rising or scoring right now.</p>
-          ) : (
+          ) : viewMode === "cards" ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {data.notable.map((p, i) => (
                 <motion.div key={p.name} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
@@ -140,6 +154,49 @@ export function MarketAlertsView({
                 </motion.div>
               ))}
             </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Player</TableHead>
+                  <TableHead className="text-right">Value</TableHead>
+                  <TableHead className="text-right">Avg pts</TableHead>
+                  <TableHead className="text-right">Trend</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.notable.map((p) => (
+                  <TableRow key={p.name}>
+                    <PlayerCell name={p.name} photo={p.photo} pos={p.pos} href={p.id ? `/dashboard/player/${p.id}` : undefined} />
+                    <TableCell className="text-right font-mono tabular-nums">{compact(p.price)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{p.avgPoints}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <TrendIcon rising={p.rising} trend={p.trend} />
+                        {p.hasOwnBid && (
+                          <Badge variant="secondary" className="text-[10px]">
+                            you bid
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {p.id && (
+                        <PlayerActionsMenu
+                          playerId={p.id}
+                          playerName={p.name}
+                          marketValue={p.marketValue}
+                          variant="market"
+                          isScouted={false}
+                          onActionComplete={refresh}
+                        />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
