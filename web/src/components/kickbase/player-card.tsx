@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode, MouseEvent } from "react";
 import Link from "next/link";
 import { PlayerAvatar } from "@/components/kickbase/player-avatar";
