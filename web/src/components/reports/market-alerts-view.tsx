@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PlayerCard } from "@/components/kickbase/player-card";
+import { PlayerActionsMenu } from "@/components/kickbase/player-actions-menu";
 import { toast } from "sonner";
 
 export function MarketAlertsView({
@@ -81,6 +82,17 @@ export function MarketAlertsView({
                 variant="compact"
                 player={{ name: p.name, photo: p.photo, pos: p.pos, value: p.ownBidAmount }}
                 href={p.id ? `/dashboard/player/${p.id}` : undefined}
+                menu={
+                  p.id && (
+                    <PlayerActionsMenu
+                      playerId={p.id}
+                      playerName={p.name}
+                      marketValue={p.marketValue}
+                      variant="market"
+                      onActionComplete={refresh}
+                    />
+                  )
+                }
               />
             ))}
           </CardContent>
@@ -111,6 +123,18 @@ export function MarketAlertsView({
                           </Badge>
                         )}
                       </div>
+                    }
+                    menu={
+                      p.id && (
+                        <PlayerActionsMenu
+                          playerId={p.id}
+                          playerName={p.name}
+                          marketValue={p.marketValue}
+                          variant="market"
+                          isScouted={false}
+                          onActionComplete={refresh}
+                        />
+                      )
                     }
                   />
                 </motion.div>

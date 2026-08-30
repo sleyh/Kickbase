@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, MouseEvent } from "react";
 import Link from "next/link";
 import { PlayerAvatar } from "@/components/kickbase/player-avatar";
 import { Sparkline } from "@/components/kickbase/sparkline";
@@ -31,6 +31,7 @@ export function PlayerCard({
   caption,
   animateValue = false,
   href,
+  menu,
   className,
 }: {
   player: PlayerCardData;
@@ -42,8 +43,14 @@ export function PlayerCard({
   animateValue?: boolean;
   /** When set, the whole card links to this route (e.g. a player detail page) - omit to keep it non-interactive. */
   href?: string;
+  /** An action-menu trigger (e.g. PlayerActionsMenu) rendered in a corner. Clicks on it never trigger href navigation. */
+  menu?: ReactNode;
   className?: string;
 }) {
+  const stopNavigation = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
   const primaryStat =
     player.points != null ? (
       animateValue ? <AnimatedNumber value={player.points} format="plain" /> : player.points
@@ -84,6 +91,11 @@ export function PlayerCard({
             </span>
           )}
         </div>
+        {menu && (
+          <div onClick={stopNavigation} className="shrink-0">
+            {menu}
+          </div>
+        )}
       </div>
     ) : (
       <div
@@ -98,6 +110,11 @@ export function PlayerCard({
             background: `linear-gradient(180deg, color-mix(in oklch, ${positionColor(player.pos)} 18%, transparent), transparent)`,
           }}
         >
+          {menu && (
+            <div onClick={stopNavigation} className="absolute top-2 right-2 z-10">
+              {menu}
+            </div>
+          )}
           <span
             className="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase"
             style={{ backgroundColor: positionColor(player.pos) }}

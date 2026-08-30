@@ -12,6 +12,7 @@
  */
 
 const RISING = 1;
+const FALLING = 2;
 
 /**
  * Whether a market listing is worth surfacing: rising in value, or
@@ -33,6 +34,15 @@ export interface MarketListingSummary {
   ownBidAmount: number | null;
   photo: string | null;
   pos: number | null;
+  /** "flat" covers mvt values beyond RISING/FALLING (e.g. brand new listings with no trend yet). */
+  trend: "up" | "down" | "flat";
+  expiresInSeconds: number | null;
+  /** Only populated by buildFullMarketListings() (enrichWithHistory() is a per-item call the cached market_alert snapshot doesn't make) - null on the notable/own-bid summaries from buildMarketSnapshot(). */
+  d1: number | null;
+  d7: number | null;
+  teamId: string | null;
+  teamName: string | null;
+  teamCrest: string | null;
 }
 
 export interface MarketSnapshot {
@@ -47,8 +57,14 @@ function playerName(item: any): string {
   return [first, last].filter(Boolean).join(" ") || "?";
 }
 
-export function buildMarketSnapshot(leagueName: string, marketItems: any[]): MarketSnapshot {
-  const summaries: MarketListingSummary[] = marketItems.map((item) => ({
+function trendOf(item: any): "up" | "down" | "flat" {
+  if (item.mvt === RISING) return "up";
+  if (item.mvt === FALLING) return "down";
+  return "flat";
+}
+
+function baseListingSummary(item: any, team?: { tid: string; name: string; crest: string | null }): MarketListingSummary {
+  return {
     id: item.i,
     name: playerName(item),
     price: item.prc ?? 0,
@@ -59,7 +75,18 @@ export function buildMarketSnapshot(leagueName: string, marketItems: any[]): Mar
     ownBidAmount: item.uop ?? null,
     photo: item.pim ?? null,
     pos: item.pos ?? null,
-  }));
+    trend: trendOf(item),
+    expiresInSeconds: item.exs ?? null,
+    d1: item.d1 ?? null,
+    d7: item.d7 ?? null,
+    teamId: team?.tid ?? item.tid ?? null,
+    teamName: team?.name ?? null,
+    teamCrest: team?.crest ?? null,
+  };
+}
+
+export function buildMarketSnapshot(leagueName: string, marketItems: any[]): MarketSnapshot {
+  const summaries: MarketListingSummary[] = marketItems.map((item) => baseListingSummary(item));
 
   const notable = summaries
     .filter((s, i) => isNotableListing(marketItems[i]))
@@ -67,4 +94,21 @@ export function buildMarketSnapshot(leagueName: string, marketItems: any[]): Mar
   const ownBids = summaries.filter((s) => s.hasOwnBid);
 
   return { leagueName, notable, ownBids };
+}
+
+/**
+ * Every live listing (not just the notable-filtered subset), soonest
+ * expiring first - for the dedicated Market page. Callers must run
+ * enrichWithHistory() (squad-value.ts) on marketItems first if d1/d7
+ * should be populated - this function just reads whatever's already on
+ * each item, it doesn't fetch.
+ */
+export function buildFullMarketListings(
+  marketItems: any[],
+  table: Array<{ tid: string; name: string; crest: string | null }>
+): MarketListingSummary[] {
+  const teamById = new Map(table.map((t) => [t.tid, t]));
+  return marketItems
+    .map((item) => baseListingSummary(item, item.tid ? teamById.get(item.tid) : undefined))
+    .sort((a, b) => (a.expiresInSeconds ?? Infinity) - (b.expiresInSeconds ?? Infinity));
 }

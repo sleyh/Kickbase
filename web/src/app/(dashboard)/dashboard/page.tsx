@@ -9,6 +9,7 @@ import { ValueTrendChart } from "@/components/reports/value-trend-chart";
 import { DebtCeilingGauge } from "@/components/reports/debt-ceiling-gauge";
 import { AnimatedNumber } from "@/components/motion/animated-number";
 import { PlayerCard } from "@/components/kickbase/player-card";
+import { PlayerActionsMenu } from "@/components/kickbase/player-actions-menu";
 
 const SHORTCUTS = [
   { href: "/dashboard/squad-value", label: "Squad Value", icon: TrendingUp },
@@ -112,6 +113,16 @@ export default async function DashboardPage() {
                 }}
                 caption={biggestMover.points != null ? `${biggestMover.points} pts` : undefined}
                 href={biggestMover.id ? `/dashboard/player/${biggestMover.id}` : undefined}
+                menu={
+                  biggestMover.id && (
+                    <PlayerActionsMenu
+                      playerId={biggestMover.id}
+                      playerName={biggestMover.name}
+                      marketValue={biggestMover.value}
+                      variant="owned"
+                    />
+                  )
+                }
               />
             </div>
           )}

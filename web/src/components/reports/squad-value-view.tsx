@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ValueTrendChart } from "@/components/reports/value-trend-chart";
 import { AnimatedNumber } from "@/components/motion/animated-number";
 import { PlayerCard } from "@/components/kickbase/player-card";
+import { PlayerActionsMenu } from "@/components/kickbase/player-actions-menu";
 import { ManagerCard } from "@/components/kickbase/manager-card";
 import { celebrate } from "@/lib/celebrate";
 import { toast } from "sonner";
@@ -182,6 +183,17 @@ export function SquadValueView({
                       <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
                         just bought
                       </span>
+                    )
+                  }
+                  menu={
+                    p.id && (
+                      <PlayerActionsMenu
+                        playerId={p.id}
+                        playerName={p.name}
+                        marketValue={p.value}
+                        variant="owned"
+                        onActionComplete={refresh}
+                      />
                     )
                   }
                 />

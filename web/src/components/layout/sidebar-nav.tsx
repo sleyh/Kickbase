@@ -11,6 +11,7 @@ import {
   Repeat,
   Radio,
   Bell,
+  ShoppingCart,
   ShieldCheck,
   Settings,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/transfer-analysis", label: "Transfer Analysis", icon: Repeat },
   { href: "/dashboard/live", label: "Live Matchday", icon: Radio },
   { href: "/dashboard/alerts", label: "Market Alerts", icon: Bell },
+  { href: "/dashboard/market", label: "Market", icon: ShoppingCart },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 

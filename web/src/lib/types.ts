@@ -100,11 +100,25 @@ export interface MarketListingSummary {
   ownBidAmount: number | null;
   photo?: string | null;
   pos?: number | null;
+  trend?: "up" | "down" | "flat";
+  expiresInSeconds?: number | null;
+  d1?: number | null;
+  d7?: number | null;
+  teamId?: string | null;
+  teamName?: string | null;
+  teamCrest?: string | null;
 }
 
 export interface MarketSnapshot {
   leagueName: string;
   notable: MarketListingSummary[];
+  ownBids: MarketListingSummary[];
+}
+
+/** Mirrors supabase/functions/market-full/index.ts's response - every live listing, not the notable-filtered subset. */
+export interface FullMarketReport {
+  leagueName: string;
+  listings: MarketListingSummary[];
   ownBids: MarketListingSummary[];
 }
 
