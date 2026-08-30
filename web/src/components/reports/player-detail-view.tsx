@@ -89,11 +89,16 @@ export function PlayerDetailView({ id }: { id: string }) {
               <TeamBadge teamId={data.team.id} teamName={data.team.name} crest={data.team.crest} size="sm" />
             )}
             {data.team && <span>{data.team.name}</span>}
-            {data.listedBy && (
+            {data.currentOwner ? (
               <span className="flex items-center gap-1.5 rounded-full bg-secondary py-0.5 pr-2.5 pl-0.5 text-xs font-medium text-secondary-foreground">
-                <PlayerAvatar name={data.listedBy.name} photo={data.listedBy.photo} size="sm" className="size-5" />
-                Listed by {data.listedBy.name}
+                {!data.currentOwner.isYou && (
+                  <PlayerAvatar name={data.currentOwner.name} photo={data.currentOwner.photo} size="sm" className="size-5" />
+                )}
+                {data.currentOwner.isYou ? "You own this player" : `Owned by ${data.currentOwner.name}`}
+                {data.listedBy && " · listed for sale"}
               </span>
+            ) : (
+              <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">Free agent - not owned</span>
             )}
           </div>
         </div>
