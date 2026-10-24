@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fal Image Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: control column left, result gallery right; stacks on phones */
+:root {
+  --bg: #f3f4f6; --panel: #ffffff; --fg: #15171c; --muted: #5d6270;
+  --line: #d9dce3; --accent: #3b3fd8; --accent-fg: #ffffff; --danger: #b42318;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111318; --panel: #1a1d24; --fg: #e9ebf0; --muted: #9298a6;
+    --line: #2c303a; --accent: #8c8fff; --accent-fg: #0f1020; --danger: #ff8a7a; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1200px; margin: 0 auto; padding-block: 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 380px 1fr; gap: 24px; align-items: start; }
+@media (max-width: 820px) { .wrap { grid-template-columns: 1fr; } }
+h1 { font: 600 28px/1.1 var(--display); margin: 0 0 4px; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 16px; }
+label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; }
+.hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+input, select, textarea { font: 14px var(--body); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; width: 100%; }
+textarea { min-height: 120px; resize: vertical; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mono { font-family: var(--mono); font-size: 13px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+button { font: 500 15px var(--body); background: var(--accent); color: var(--accent-fg); border: 0;
+  border-radius: 6px; padding: 11px 14px; cursor: pointer; }
+button:disabled { opacity: .55; cursor: progress; }
+.status { font-family: var(--mono); font-size: 12px; color: var(--muted); min-height: 18px; overflow-wrap: anywhere; }
+.status.err { color: var(--danger); }
+.gallery { display: grid; gap: 16px; min-width: 0; }
+.empty { border: 1px dashed var(--line); border-radius: 10px; padding: 48px 20px; text-align: center; color: var(--muted); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.card img { display: block; width: 100%; height: auto; }
+.meta { padding: 12px 14px; display: grid; gap: 4px; font-size: 13px; }
+.meta .p { overflow-wrap: anywhere; }
+.meta .tags { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.meta a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section>
+    <h1>fal Image Studio</h1>
+    <p class="sub">Text-to-image across fal.ai models.</p>
+    <form class="panel" id="form">
+      <label>API key <span class="hint">Stored only in this browser.</span>
+        <input id="key" type="password" class="mono" placeholder="xxxxxxxx-xxxx-…:xxxxxxxx" autocomplete="off">
+      </label>
+      <label>Model
+        <select id="model">
+          <option value="fal-ai/flux/schnell">FLUX.1 [schnell]</option>
+          <option value="fal-ai/flux/dev">FLUX.1 [dev]</option>
+          <option value="fal-ai/flux-pro/v1.1">FLUX1.1 [pro]</option>
+          <option value="fal-ai/flux-pro/v1.1-ultra">FLUX1.1 [pro] ultra</option>
+          <option value="fal-ai/recraft-v3">Recraft V3</option>
+          <option value="fal-ai/imagen4/preview">Imagen 4 (preview)</option>
+          <option value="custom">Custom model ID…</option>
+        </select>
+      </label>
+      <label id="customWrap" hidden>Custom model ID
+        <input id="custom" class="mono" placeholder="fal-ai/your-model">
+      </label>
+      <label>Prompt
+        <textarea id="prompt">A vinyl record on a wooden turntable, warm evening light, shallow depth of field</textarea>
+      </label>
+      <div class="row">
+        <label>Safety checker <span class="hint">enable_safety_checker</span>
+          <select id="checker">
+            <option value="true">On</option>
+            <option value="false" selected>Off</option>
+            <option value="">Don't send</option>
+          </select>
+        </label>
+        <label>Safety tolerance <span class="hint">safety_tolerance (pro models)</span>
+          <select id="tolerance">
+            <option value="">Don't send</option>
+            <option>1</option><option>2</option><option>3</option>
+            <option>4</option><option>5</option><option selected>6</option>
+          </select>
+        </label>
+      </div>
+      <button id="go" type="submit">Generate</button>
+      <div id="status" class="status" role="status"></div>
+    </form>
+  </section>
+  <section class="gallery" id="gallery">
+    <div class="empty" id="empty">Generated images appear here, newest first.</div>
+  </section>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get(k){ try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch {} }
+};
+$("key").value = store.get("falKey");
+const savedModel = store.get("falModel"); if (savedModel) $("model").value = savedModel;
+$("custom").value = store.get("falCustom");
+const syncCustom = () => { $("customWrap").hidden = $("model").value !== "custom"; };
+$("model").addEventListener("change", syncCustom); syncCustom();
+
+function setStatus(msg, err=false){ $("status").textContent = msg; $("status").className = "status" + (err ? " err" : ""); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function falFetch(url, key, opts={}) {
+  const headers = { "Authorization": "Key " + key };
+  if (opts.body) headers["Content-Type"] = "application/json";
+  const res = await fetch(url, { ...opts, headers });
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  if (!res.ok) {
+    const detail = typeof data === "object" ? JSON.stringify(data.detail ?? data) : data;
+    throw new Error(`HTTP ${res.status}: ${detail}`);
+  }
+  return data;
+}
+
+$("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const key = $("key").value.trim();
+  const model = $("model").value === "custom" ? $("custom").value.trim().replace(/^\/+|\/+$/g, "") : $("model").value;
+  const prompt = $("prompt").value.trim();
+  if (!key) return setStatus("Add your fal.ai API key first.", true);
+  if (!model) return setStatus("Enter a model ID.", true);
+  if (!prompt) return setStatus("Write a prompt first.", true);
+  store.set("falKey", key); store.set("falModel", $("model").value); store.set("falCustom", $("custom").value);
+
+  const input = { prompt };
+  if ($("checker").value !== "") input.enable_safety_checker = $("checker").value === "true";
+  if ($("tolerance").value !== "") input.safety_tolerance = $("tolerance").value;
+
+  $("go").disabled = true;
+  const t0 = performance.now();
+  try {
+    setStatus(`Queuing ${model}…`);
+    const job = await falFetch(`https://queue.fal.run/${model}`, key, { method: "POST", body: JSON.stringify(input) });
+    let st;
+    do {
+      await sleep(1000);
+      st = await falFetch(job.status_url, key);
+      const pos = st.queue_position != null ? ` (position ${st.queue_position})` : "";
+      setStatus(`${st.status}${pos} · ${((performance.now()-t0)/1000).toFixed(0)}s`);
+    } while (st.status === "IN_QUEUE" || st.status === "IN_PROGRESS");
+    const out = await falFetch(job.response_url, key);
+    const images = out.images || (out.image ? [out.image] : []);
+    if (!images.length) throw new Error("No images in response: " + JSON.stringify(out).slice(0, 300));
+    const nsfw = out.has_nsfw_concepts || [];
+    images.forEach((img, i) => addCard(img.url, model, prompt, input, nsfw[i]));
+    setStatus(`Done in ${((performance.now()-t0)/1000).toFixed(1)}s`);
+  } catch (err) {
+    const net = /Failed to fetch|Load failed|NetworkError/i.test(err.message);
+    setStatus(net ? "Network error: this page couldn't reach fal.ai. Open the file in a desktop browser (Chrome, Safari or Firefox) rather than an in-app preview." : err.message, true);
+  } finally { $("go").disabled = false; }
+});
+
+function addCard(url, model, prompt, input, flagged) {
+  $("empty").hidden = true;
+  const card = document.createElement("article"); card.className = "card";
+  const img = document.createElement("img"); img.src = url; img.alt = prompt; img.loading = "lazy";
+  const meta = document.createElement("div"); meta.className = "meta";
+  const p = document.createElement("div"); p.className = "p"; p.textContent = prompt;
+  const tags = document.createElement("div"); tags.className = "tags";
+  tags.textContent = [model,
+    "checker=" + (input.enable_safety_checker ?? "–"),
+    "tolerance=" + (input.safety_tolerance ?? "–"),
+    flagged ? "flagged NSFW" : null].filter(Boolean).join(" · ");
+  const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open full size";
+  meta.append(p, tags, a); card.append(img, meta);
+  $("gallery").prepend(card);
+}
+</script>
+</body>
+</html>
