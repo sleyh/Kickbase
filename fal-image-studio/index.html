@@ -88,7 +88,7 @@ button:disabled { opacity: .55; cursor: progress; }
             <option value="">Don't send</option>
           </select>
         </label>
-        <label>Safety tolerance <span class="hint">safety_tolerance (pro models)</span>
+        <label>Safety tolerance <span class="hint">safety_tolerance, 6 = loosest</span>
           <select id="tolerance">
             <option value="">Don't send</option>
             <option>1</option><option>2</option><option>3</option>
@@ -96,6 +96,7 @@ button:disabled { opacity: .55; cursor: progress; }
           </select>
         </label>
       </div>
+      <div id="sends" class="status"></div>
       <button id="go" type="submit">Generate</button>
       <div id="status" class="status" role="status"></div>
     </form>
@@ -125,12 +126,45 @@ const MODELS = [
               ["Krea 2 Large", "krea/v2/large/text-to-image"], ["Z-Image Turbo", "fal-ai/z-image/turbo"],
               ["Custom…", "custom"]]]
 ];
+// Which safety fields each model accepts (from fal's API schemas). tol = highest safety_tolerance allowed, 0 = field not supported.
+const SAFETY = {
+  "fal-ai/nano-banana-2": { checker: false, tol: 6 },
+  "google/nano-banana-2.1": { checker: false, tol: 6 },
+  "fal-ai/nano-banana-pro": { checker: false, tol: 6 },
+  "fal-ai/nano-banana": { checker: false, tol: 6 },
+  "fal-ai/flux-2-max": { checker: true, tol: 5 },
+  "fal-ai/flux-2-pro": { checker: true, tol: 5 },
+  "fal-ai/flux-pro/v1.1-ultra": { checker: false, tol: 6 },
+  "fal-ai/flux/schnell": { checker: true, tol: 0 },
+  "fal-ai/bytedance/seedream/v4.5/text-to-image": { checker: true, tol: 0 },
+  "bytedance/seedream/v5/pro/text-to-image": { checker: true, tol: 0 },
+  "fal-ai/z-image/turbo": { checker: true, tol: 0 },
+  "fal-ai/qwen-image-2/pro/text-to-image": { checker: true, tol: 0 }
+};
+function safetyInput(model) {
+  const out = {}, s = SAFETY[model];
+  const chk = $("checker").value, tol = $("tolerance").value;
+  if (chk !== "" && (!s || s.checker)) out.enable_safety_checker = chk === "true";
+  if (tol !== "" && (!s || s.tol)) out.safety_tolerance = String(s ? Math.min(+tol, s.tol) : tol);
+  return out;
+}
+function currentModel() {
+  return $("model").value === "custom" ? $("custom").value.trim().replace(/^\/+|\/+$/g, "") : $("model").value;
+}
+function syncSends() {
+  const m = currentModel(), sends = safetyInput(m);
+  const parts = Object.entries(sends).map(([k, v]) => `${k}=${v}`);
+  const known = SAFETY[m] ? "" : " (unverified model, sent as set)";
+  $("sends").textContent = "Sends: " + (parts.length ? parts.join(", ") : "no safety fields") + known;
+}
 const syncCustom = () => {
   const v = $("model").value;
   $("customWrap").hidden = v !== "custom";
   $("modelId").textContent = v === "custom" ? "" : v;
   document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-checked", c.dataset.id === v));
+  syncSends();
 };
+["checker", "tolerance", "custom"].forEach(id => $(id).addEventListener("input", syncSends));
 for (const [name, list] of MODELS) {
   const g = document.createElement("div"); g.className = "group";
   const h = document.createElement("div"); h.className = "gname"; h.textContent = name;
@@ -174,9 +208,7 @@ $("form").addEventListener("submit", async e => {
   if (!prompt) return setStatus("Write a prompt first.", true);
   store.set("falKey", key); store.set("falModel", $("model").value); store.set("falCustom", $("custom").value);
 
-  const input = { prompt };
-  if ($("checker").value !== "") input.enable_safety_checker = $("checker").value === "true";
-  if ($("tolerance").value !== "") input.safety_tolerance = $("tolerance").value;
+  const input = { prompt, ...safetyInput(model) };
 
   $("go").disabled = true;
   const t0 = performance.now();
