@@ -35,6 +35,15 @@ input, select, textarea { font: 14px var(--body); color: var(--fg); background: 
 textarea { min-height: 120px; resize: vertical; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .mono { font-family: var(--mono); font-size: 13px; }
+.field { display: grid; gap: 8px; }
+.lbl { font-size: 13px; font-weight: 500; }
+.chips { display: grid; gap: 10px; }
+.group { display: grid; gap: 6px; }
+.gname { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.gchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 500 13px var(--body); background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 11px; cursor: pointer; }
+.chip[aria-checked="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 button { font: 500 15px var(--body); background: var(--accent); color: var(--accent-fg); border: 0;
   border-radius: 6px; padding: 11px 14px; cursor: pointer; }
@@ -60,17 +69,11 @@ button:disabled { opacity: .55; cursor: progress; }
       <label>API key <span class="hint">Stored only in this browser.</span>
         <input id="key" type="password" class="mono" placeholder="xxxxxxxx-xxxx-…:xxxxxxxx" autocomplete="off">
       </label>
-      <label>Model
-        <select id="model">
-          <option value="fal-ai/flux/schnell">FLUX.1 [schnell]</option>
-          <option value="fal-ai/flux/dev">FLUX.1 [dev]</option>
-          <option value="fal-ai/flux-pro/v1.1">FLUX1.1 [pro]</option>
-          <option value="fal-ai/flux-pro/v1.1-ultra">FLUX1.1 [pro] ultra</option>
-          <option value="fal-ai/recraft-v3">Recraft V3</option>
-          <option value="fal-ai/imagen4/preview">Imagen 4 (preview)</option>
-          <option value="custom">Custom model ID…</option>
-        </select>
-      </label>
+      <div class="field">
+        <div class="lbl">Model <span class="hint" id="modelId"></span></div>
+        <input type="hidden" id="model" value="fal-ai/nano-banana-2">
+        <div id="chips" class="chips" role="radiogroup" aria-label="Model"></div>
+      </div>
       <label id="customWrap" hidden>Custom model ID
         <input id="custom" class="mono" placeholder="fal-ai/your-model">
       </label>
@@ -108,10 +111,42 @@ const store = {
   set(k,v){ try { localStorage.setItem(k,v); } catch {} }
 };
 $("key").value = store.get("falKey");
-const savedModel = store.get("falModel"); if (savedModel) $("model").value = savedModel;
+const MODELS = [
+  ["Google", [["Nano Banana 2", "fal-ai/nano-banana-2"], ["Nano Banana 2.1", "google/nano-banana-2.1"],
+              ["Nano Banana Pro", "fal-ai/nano-banana-pro"], ["Nano Banana", "fal-ai/nano-banana"]]],
+  ["OpenAI", [["GPT Image 2", "openai/gpt-image-2"]]],
+  ["Black Forest Labs", [["FLUX 3", "blackforestlabs/flux-3/text-to-image"], ["FLUX.2 max", "fal-ai/flux-2-max"],
+              ["FLUX.2 pro", "fal-ai/flux-2-pro"], ["FLUX.2 klein", "fal-ai/flux-2/klein/9b"],
+              ["FLUX.1 schnell", "fal-ai/flux/schnell"], ["FLUX1.1 ultra", "fal-ai/flux-pro/v1.1-ultra"]]],
+  ["ByteDance", [["Seedream 5 Pro", "bytedance/seedream/v5/pro/text-to-image"],
+              ["Seedream 4.5", "fal-ai/bytedance/seedream/v4.5/text-to-image"]]],
+  ["More", [["Grok Imagine", "xai/grok-imagine-image"], ["Ideogram V3", "fal-ai/ideogram/v3"],
+              ["Recraft V4 Pro", "fal-ai/recraft/v4/pro/text-to-image"], ["Qwen Image 2 Pro", "fal-ai/qwen-image-2/pro/text-to-image"],
+              ["Krea 2 Large", "krea/v2/large/text-to-image"], ["Z-Image Turbo", "fal-ai/z-image/turbo"],
+              ["Custom…", "custom"]]]
+];
+const syncCustom = () => {
+  const v = $("model").value;
+  $("customWrap").hidden = v !== "custom";
+  $("modelId").textContent = v === "custom" ? "" : v;
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-checked", c.dataset.id === v));
+};
+for (const [name, list] of MODELS) {
+  const g = document.createElement("div"); g.className = "group";
+  const h = document.createElement("div"); h.className = "gname"; h.textContent = name;
+  const row = document.createElement("div"); row.className = "gchips";
+  for (const [label, id] of list) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip";
+    b.textContent = label; b.dataset.id = id; b.setAttribute("role", "radio");
+    b.addEventListener("click", () => { $("model").value = id; store.set("falModel", id); syncCustom(); });
+    row.append(b);
+  }
+  g.append(h, row); $("chips").append(g);
+}
+const savedModel = store.get("falModel");
+if (savedModel && MODELS.some(([, l]) => l.some(([, id]) => id === savedModel))) $("model").value = savedModel;
 $("custom").value = store.get("falCustom");
-const syncCustom = () => { $("customWrap").hidden = $("model").value !== "custom"; };
-$("model").addEventListener("change", syncCustom); syncCustom();
+syncCustom();
 
 function setStatus(msg, err=false){ $("status").textContent = msg; $("status").className = "status" + (err ? " err" : ""); }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -163,7 +198,7 @@ $("form").addEventListener("submit", async e => {
     setStatus(`Done in ${((performance.now()-t0)/1000).toFixed(1)}s`);
   } catch (err) {
     const net = /Failed to fetch|Load failed|NetworkError/i.test(err.message);
-    setStatus(net ? "Network error: this page couldn't reach fal.ai. Open the file in a desktop browser (Chrome, Safari or Firefox) rather than an in-app preview." : err.message, true);
+    setStatus(net ? "Network error: this page couldn't reach fal.ai. Check your connection and try again." : err.message, true);
   } finally { $("go").disabled = false; }
 });
 
